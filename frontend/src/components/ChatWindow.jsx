@@ -54,10 +54,10 @@ function ChatWindow({ match, onBack }) {
                 />
                 <div className="fw-bold">{match.name}</div>
                 <button
-                    className="btn btn-sm btn-danger ms-auto"
+                    className="btn btn-sm btn-danger ms-auto bi-calendar-week"
                     onClick={handleRequestDate}
                 >
-                    📅 Plan Date
+                    - Plan Date
                 </button>
             </div>
 

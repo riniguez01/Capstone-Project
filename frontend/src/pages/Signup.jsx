@@ -11,6 +11,9 @@ function Signup() {
     const [age, setAge] = useState("");
     const [error, setError] = useState("");
 
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+
     const handleSignup = (e) => {
         e.preventDefault();
 
@@ -34,6 +37,16 @@ function Signup() {
             return;
         }
 
+        if (!email.includes("@")) {
+            setError("Please enter a valid email.");
+            return;
+        }
+
+        if (password.length < 6) {
+            setError("Password must be at least 6 characters.");
+            return;
+        }
+
         setError("");
 
         // Backend disabled
@@ -52,7 +65,7 @@ function Signup() {
                 <h2 className="fs-6 text-white">Let us get to know you.</h2>
             </div>
 
-            <div className="signin-card p-4 text-center">
+            <div className="signin-card p-4 mb-3 text-center">
 
                 <form onSubmit={handleSignup}>
 
@@ -100,10 +113,29 @@ function Signup() {
                         <p className="text-danger small">{error}</p>
                     )}
 
+                    <div className="mb-3 text-start">
+                        <label>Email:</label>
+                        <input
+                            type="email"
+                            className="form-control custom-input bg-light"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="mb-3 text-start">
+                        <label>Password:</label>
+                        <input
+                            type="password"
+                            className="form-control custom-input bg-light"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                        />
+                    </div>
+
                     <button type="submit" className="submit-btn">
                         Next
                     </button>
-
                 </form>
 
                 <div className="mt-3 small">

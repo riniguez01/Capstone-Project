@@ -2,10 +2,12 @@ import { Routes, Route } from "react-router-dom"
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Profile from './pages/Profile'
-import Questionnaire from './pages/Questionnaire.jsx'
+import Questionnaire from './pages/Questionnaire'
 import Matching from './pages/Matching'
 import Chat from './pages/Chat'
 import DatePlanner from './pages/DatePlanner'
+
+import PostDateSurvey from "./components/PostDateSurvey";
 
 function App() {
     return (
@@ -17,6 +19,7 @@ function App() {
             <Route path="/matching" element={<Matching />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/dates" element={<DatePlanner />} />
+            <Route path="/postDate" element={<PostDateSurvey/>} />
         </Routes>
     )
 }

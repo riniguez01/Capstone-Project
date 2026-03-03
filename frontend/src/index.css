@@ -98,20 +98,6 @@
     padding: 10px 0;
 }
 
-/*.dual-range::-webkit-slider-thumb {*/
-/*    pointer-events: all;*/
-/*    cursor: pointer;*/
-/*    !*z-index: 1;*!*/
-/*    position: relative;*/
-/*}*/
-
-/*.dual-range::-moz-range-thumb {*/
-/*    pointer-events: all;*/
-/*    cursor: pointer;*/
-/*    !*z-index: 1;*!*/
-/*    position: relative;*/
-/*}*/
-
 .dual-range {
     position: absolute;
     top: 0;

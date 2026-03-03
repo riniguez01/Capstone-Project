@@ -13,7 +13,6 @@ export function UserProvider({ children }) {
 
         religion: "",
         ethnicity: "",
-        language: "",
         education: "",
         familyOriented: "",
 

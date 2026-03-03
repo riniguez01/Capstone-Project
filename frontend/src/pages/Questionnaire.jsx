@@ -65,8 +65,6 @@ function Questionnaire() {
                             <option>Mormon</option>
                             <option>Muslim</option>
                             <option>Spiritual (non-religious)</option>
-                            <option>Other</option>
-                            <option>Prefer not to say</option>
                         </select>
                     </div>
 
@@ -82,23 +80,6 @@ function Questionnaire() {
                             <option>Pacific Islander</option>
                             <option>White / Caucasian</option>
                             <option>Multiracial</option>
-                            <option>Other</option>
-                            <option>Prefer not to say</option>
-                        </select>
-                    </div>
-
-                    <div className="mb-3">
-                        <label>Primary Language</label>
-                        <select className="form-select" value={profile.language} onChange={(e) => update("language", e.target.value)}>
-                            <option value="">Select...</option>
-                            <option>English</option>
-                            <option>Spanish</option>
-                            <option>French</option>
-                            <option>Mandarin</option>
-                            <option>Arabic</option>
-                            <option>Hindi</option>
-                            <option>Portuguese</option>
-                            <option>Other</option>
                         </select>
                     </div>
 
@@ -112,8 +93,7 @@ function Questionnaire() {
                             <option>Bachelor's Degree</option>
                             <option>Master's Degree</option>
                             <option>Doctorate / PhD</option>
-                            <option>Trade / Vocational</option>
-                            <option>Other</option>
+                            <option>Trade</option>
                         </select>
                     </div>
 
@@ -306,7 +286,6 @@ function Questionnaire() {
                             <option>Conservative</option>
                             <option>Very Conservative</option>
                             <option>Apolitical</option>
-                            <option>Prefer not to say</option>
                         </select>
                     </div>
 

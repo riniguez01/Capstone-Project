@@ -22,7 +22,6 @@ function DatePlanner() {
     const location = useLocation();
     const navigate = useNavigate();
 
-    // If arrived from ChatWindow, match and returnTo will be in router state
     const match = location.state?.match || null;
     const returnTo = location.state?.returnTo || null;
 
@@ -136,7 +135,7 @@ function DatePlanner() {
                                     onClick={handleSendRequest}
                                     disabled={!selectedVenue || !selectedTime}
                                 >
-                                    Send Date Request to {match.name} 💌
+                                    Send Date Request to {match.name}
                                 </button>
                             ) : (
                                 <button
