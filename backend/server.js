@@ -23,3 +23,5 @@ app.use("/matches", matchRoutes);
 app.listen(PORT, () => {
     console.log(`Backend server running on port ${PORT}`);
 });
+require("dotenv").config();
+require("./config/db"); // initializes the connection

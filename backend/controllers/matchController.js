@@ -1,56 +1,61 @@
-const generateMatches = require("../services/matchingService");
+// matchController.js
+// Handles HTTP requests for the matching feature.
+// GET /matches/all     — returns all active candidates (no filtering)
+// GET /matches/:userId — runs the full matching pipeline for a user
 
-// Mock user
-const mockUser = {
-    user_id: 1,
-    date_of_birth: "2003-05-10",
-    location_state: "Illinois",
-    activity_level: "medium",
-    gender_identity: 1,
-    religion_id: 2,
-    interests: ["music", "movies", "travel"],
-    trust_score: 85,
-    preferences: { //preferences are treated as hard constraints
-        preferred_age_min: 18,
-        preferred_age_max: 25,
-        preferred_gender: 1,
-        preferred_religion_type_id: 2,
-        preferred_distance_states: ["Illinois", "Indiana", "Wisconsin"]
+const generateMatches = require("../services/matchingService");
+const { getUserById, getCandidates } = require("../services/userService");
+
+// GET /matches/all — all active candidates (used for testing/admin)
+exports.getAllCandidates = async (req, res) => {
+    try {
+        const candidates = await getCandidates(0);
+        res.json(candidates);
+    } catch (err) {
+        console.error("getAllCandidates error:", err.message);
+        res.status(500).json({ error: "Failed to fetch candidates" });
     }
 };
 
-// Mock candidates: mock data to simulate database users, but the architecture is built so it can easily plug into a real database
-const mockCandidates = [
-    { user_id: 2, date_of_birth: "2002-04-01", location_state: "Illinois", activity_level: "medium", gender_identity: 1, religion_id: 2, interests: ["music","movies","travel"], trust_score: 85 },
-    { user_id: 3, date_of_birth: "1999-06-15", location_state: "Indiana", activity_level: "high", gender_identity: 1, religion_id: 2, interests: ["sports","travel"], trust_score: 90 },
-    { user_id: 4, date_of_birth: "2001-02-10", location_state: "Wisconsin", activity_level: "medium", gender_identity: 1, religion_id: 2, interests: ["music","gaming"], trust_score: 70 },
-    { user_id: 5, date_of_birth: "2003-09-20", location_state: "Texas", activity_level: "low", gender_identity: 1, religion_id: 3, interests: ["movies"], trust_score: 60 },
-    { user_id: 6, date_of_birth: "2002-11-05", location_state: "Illinois", activity_level: "medium", gender_identity: 1, religion_id: 2, interests: ["music","travel","gaming"], trust_score: 95 },
-    { user_id: 7, date_of_birth: "1998-01-30", location_state: "Illinois", activity_level: "high", gender_identity: 1, religion_id: 2, interests: ["movies","sports","travel"], trust_score: 88 },
-    { user_id: 8, date_of_birth: "2000-07-18", location_state: "Indiana", activity_level: "medium", gender_identity: 2, religion_id: 2, interests: ["music"], trust_score: 75 }
-];
+// GET /matches/:userId?ranked=true
+exports.getMatches = async (req, res) => {
+    try {
+        const userId = parseInt(req.params.userId);
+        if (isNaN(userId)) return res.status(400).json({ error: "Invalid user ID" });
 
-// GET all candidates
-exports.getAllCandidates = (req, res) => {
-    res.json(mockCandidates);
-};
+        const shouldRank = req.query.ranked !== "false"; // ranked by default
 
-// GET matches
-exports.getMatches = (req, res) => {
+        const user = await getUserById(userId);
+        if (!user) return res.status(404).json({ error: "User not found" });
+        if (!user.preferences) return res.status(400).json({ error: "User has no preferences set" });
 
-    const shouldRank = req.query.ranked === "true";
+        const candidates = await getCandidates(userId);
+        const matches = await generateMatches(user, candidates, shouldRank);
 
-    const matches = generateMatches(mockUser, mockCandidates, shouldRank);
+        // Enrich each match result with display fields
+        const fullMatches = matches.map(match => {
+            const candidate = candidates.find(c => c.user_id === match.user_id);
+            return {
+                user_id: match.user_id,
+                first_name: candidate?.first_name || null,
+                last_name: candidate?.last_name || null,
+                location_city: candidate?.location_city || null,
+                location_state: candidate?.location_state || null,
+                score: match.score,
+                raw_score: match.raw_score,
+                trust_penalized: match.trust_penalized,
+                breakdown: match.breakdown
+            };
+        });
 
-    const fullMatches = matches.map(match => {
-        const candidate = mockCandidates.find(c => c.user_id === match.user_id);
+        res.json({
+            user_id: userId,
+            total_matches: fullMatches.length,
+            matches: fullMatches
+        });
 
-        return {
-            ...candidate,
-            score: match.score,
-            breakdown: match.breakdown
-        };
-    });
-
-    res.json(fullMatches);
+    } catch (err) {
+        console.error("getMatches error:", err.message);
+        res.status(500).json({ error: "Failed to generate matches" });
+    }
 };
