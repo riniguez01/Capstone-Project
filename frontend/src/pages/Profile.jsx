@@ -313,7 +313,7 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Gender Preference</label>
-                        <ToggleGroup options={["Male", "Female", "Non-binary", "Open to all"]} value={preferences.genderPref} onChange={(v) => updatePref("genderPref", v)} />
+                        <ToggleGroup options={["Male", "Female", "Non-binary", "No preference"]} value={preferences.genderPref} onChange={(v) => updatePref("genderPref", v)} />
                     </div>
 
                     <div className="mb-3 text-start">

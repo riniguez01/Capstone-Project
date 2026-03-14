@@ -67,7 +67,7 @@ function Preferences() {
                     <div className="mb-3">
                         <label>Gender Preference <span className="text-danger">*</span></label>
                         <ToggleGroup
-                            options={["Male", "Female", "Non-binary", "Open to all"]}
+                            options={["Male", "Female", "Non-binary", "No preference"]}
                             value={preferences.genderPref}
                             onChange={(v) => update("genderPref", v)}
                         />
