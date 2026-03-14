@@ -2,11 +2,11 @@
 -- Aura Dating - Test Users Seed File
 -- ============================================
 
--- Main test user (run matching as this user)
+-- Main test user
 INSERT INTO users (
     first_name, last_name, email, password_hash,
-    date_of_birth, pronouns, gender_identity,
-    sexual_orientation, bio, location_city,
+    date_of_birth, gender_identity,
+    bio, profile_photo_url, location_city,
     location_state, latitude, longitude,
     account_status, created_at, last_login,
     height_inches, religion_id, role_id, tier_id,
@@ -18,8 +18,8 @@ INSERT INTO users (
     astrology, children, political
 ) VALUES (
     'Dante', 'Rivera', 'dante@test.com', 'hashedpassword',
-    '1998-05-12', 'He/Him', 2,
-    1, 'Love concerts, hiking, and trying new restaurants', 'Chicago',
+    '1998-05-12', 2,
+    'Love concerts, hiking, and trying new restaurants', NULL, 'Chicago',
     'IL', 41.878113, -87.629799,
     'active', NOW(), NOW(),
     69, 6, 1, 1,
@@ -54,11 +54,11 @@ INSERT INTO preferences (
 -- SHOULD MATCH
 -- ============================================
 
--- Candidate 1: Perfect match - highest score expected
+-- Beatrice: Perfect match
 INSERT INTO users (
     first_name, last_name, email, password_hash,
-    date_of_birth, pronouns, gender_identity,
-    sexual_orientation, bio, location_city,
+    date_of_birth, gender_identity,
+    bio, profile_photo_url, location_city,
     location_state, latitude, longitude,
     account_status, created_at, last_login,
     height_inches, religion_id, role_id, tier_id,
@@ -70,8 +70,8 @@ INSERT INTO users (
     astrology, children, political
 ) VALUES (
     'Beatrice', 'Chen', 'beatrice@test.com', 'hashedpassword',
-    '1999-03-15', 'She/Her', 3,
-    1, 'Bookworm who loves hiking and live music', 'Chicago',
+    '1999-03-15', 3,
+    'Bookworm who loves hiking and live music', NULL, 'Chicago',
     'IL', 41.878113, -87.629799,
     'active', NOW(), NOW(),
     65, 6, 1, 1,
@@ -86,11 +86,11 @@ INSERT INTO users (
 INSERT INTO trust_score (user_id, internal_score, last_updated)
 VALUES (2, 90, NOW());
 
--- Candidate 2: Good match - medium score expected
+-- Zendaya: Good match
 INSERT INTO users (
     first_name, last_name, email, password_hash,
-    date_of_birth, pronouns, gender_identity,
-    sexual_orientation, bio, location_city,
+    date_of_birth, gender_identity,
+    bio, profile_photo_url, location_city,
     location_state, latitude, longitude,
     account_status, created_at, last_login,
     height_inches, religion_id, role_id, tier_id,
@@ -102,8 +102,8 @@ INSERT INTO users (
     astrology, children, political
 ) VALUES (
     'Zendaya', 'Brooks', 'zendaya@test.com', 'hashedpassword',
-    '1997-07-22', 'She/Her', 3,
-    1, 'Coffee addict, casual gamer, dog mom', 'Chicago',
+    '1997-07-22', 3,
+    'Coffee addict, casual gamer, dog mom', NULL, 'Chicago',
     'IL', 41.878113, -87.629799,
     'active', NOW(), NOW(),
     63, 6, 1, 1,
@@ -118,11 +118,11 @@ INSERT INTO users (
 INSERT INTO trust_score (user_id, internal_score, last_updated)
 VALUES (3, 75, NOW());
 
--- Candidate 3: Valid match - moderate trust penalty
+-- Olivia: Moderate match
 INSERT INTO users (
     first_name, last_name, email, password_hash,
-    date_of_birth, pronouns, gender_identity,
-    sexual_orientation, bio, location_city,
+    date_of_birth, gender_identity,
+    bio, profile_photo_url, location_city,
     location_state, latitude, longitude,
     account_status, created_at, last_login,
     height_inches, religion_id, role_id, tier_id,
@@ -134,8 +134,8 @@ INSERT INTO users (
     astrology, children, political
 ) VALUES (
     'Olivia', 'Scott', 'olivia@test.com', 'hashedpassword',
-    '2000-11-08', 'She/Her', 3,
-    1, 'Musician and travel enthusiast based in Chicago', 'Chicago',
+    '2000-11-08', 3,
+    'Musician and travel enthusiast based in Chicago', NULL, 'Chicago',
     'IL', 41.878113, -87.629799,
     'active', NOW(), NOW(),
     62, 6, 1, 1,
@@ -154,11 +154,11 @@ VALUES (4, 55, NOW());
 -- SHOULD BE FILTERED OUT
 -- ============================================
 
--- Candidate 4: FILTERED - trust score below 40
+-- Shane: FILTERED - trust score 25
 INSERT INTO users (
     first_name, last_name, email, password_hash,
-    date_of_birth, pronouns, gender_identity,
-    sexual_orientation, bio, location_city,
+    date_of_birth, gender_identity,
+    bio, profile_photo_url, location_city,
     location_state, latitude, longitude,
     account_status, created_at, last_login,
     height_inches, religion_id, role_id, tier_id,
@@ -170,8 +170,8 @@ INSERT INTO users (
     astrology, children, political
 ) VALUES (
     'Shane', 'Webb', 'shane@test.com', 'hashedpassword',
-    '1999-01-01', 'He/Him', 3,
-    1, 'Loves cooking and outdoor adventures', 'Chicago',
+    '1999-01-01', 3,
+    'Loves cooking and outdoor adventures', NULL, 'Chicago',
     'IL', 41.878113, -87.629799,
     'active', NOW(), NOW(),
     64, 6, 1, 1,
@@ -186,11 +186,11 @@ INSERT INTO users (
 INSERT INTO trust_score (user_id, internal_score, last_updated)
 VALUES (5, 25, NOW());
 
--- Candidate 5: FILTERED - wrong religion
+-- Priya: FILTERED - wrong religion (Atheist id 2)
 INSERT INTO users (
     first_name, last_name, email, password_hash,
-    date_of_birth, pronouns, gender_identity,
-    sexual_orientation, bio, location_city,
+    date_of_birth, gender_identity,
+    bio, profile_photo_url, location_city,
     location_state, latitude, longitude,
     account_status, created_at, last_login,
     height_inches, religion_id, role_id, tier_id,
@@ -202,8 +202,8 @@ INSERT INTO users (
     astrology, children, political
 ) VALUES (
     'Priya', 'Patel', 'priya@test.com', 'hashedpassword',
-    '1999-06-15', 'She/Her', 3,
-    1, 'Yoga instructor who loves art and poetry', 'Chicago',
+    '1999-06-15', 3,
+    'Yoga instructor who loves art and poetry', NULL, 'Chicago',
     'IL', 41.878113, -87.629799,
     'active', NOW(), NOW(),
     65, 2, 1, 1,
@@ -218,11 +218,11 @@ INSERT INTO users (
 INSERT INTO trust_score (user_id, internal_score, last_updated)
 VALUES (6, 80, NOW());
 
--- Candidate 6: FILTERED - wrong gender
+-- Tyler: FILTERED - wrong gender (Man id 2)
 INSERT INTO users (
     first_name, last_name, email, password_hash,
-    date_of_birth, pronouns, gender_identity,
-    sexual_orientation, bio, location_city,
+    date_of_birth, gender_identity,
+    bio, profile_photo_url, location_city,
     location_state, latitude, longitude,
     account_status, created_at, last_login,
     height_inches, religion_id, role_id, tier_id,
@@ -234,8 +234,8 @@ INSERT INTO users (
     astrology, children, political
 ) VALUES (
     'Tyler', 'Brooks', 'tyler@test.com', 'hashedpassword',
-    '1999-06-15', 'He/Him', 2,
-    1, 'Huge sports fan and weekend chef', 'Chicago',
+    '1999-06-15', 2,
+    'Huge sports fan and weekend chef', NULL, 'Chicago',
     'IL', 41.878113, -87.629799,
     'active', NOW(), NOW(),
     72, 6, 1, 1,
@@ -250,11 +250,11 @@ INSERT INTO users (
 INSERT INTO trust_score (user_id, internal_score, last_updated)
 VALUES (7, 80, NOW());
 
--- Candidate 7: FILTERED - age out of range
+-- Sandra: FILTERED - age out of range (born 1975)
 INSERT INTO users (
     first_name, last_name, email, password_hash,
-    date_of_birth, pronouns, gender_identity,
-    sexual_orientation, bio, location_city,
+    date_of_birth, gender_identity,
+    bio, profile_photo_url, location_city,
     location_state, latitude, longitude,
     account_status, created_at, last_login,
     height_inches, religion_id, role_id, tier_id,
@@ -266,8 +266,8 @@ INSERT INTO users (
     astrology, children, political
 ) VALUES (
     'Sandra', 'Nguyen', 'sandra@test.com', 'hashedpassword',
-    '1975-01-01', 'She/Her', 3,
-    1, 'Wine lover and avid reader', 'Chicago',
+    '1975-01-01', 3,
+    'Wine lover and avid reader', NULL, 'Chicago',
     'IL', 41.878113, -87.629799,
     'active', NOW(), NOW(),
     63, 6, 1, 1,
@@ -282,11 +282,11 @@ INSERT INTO users (
 INSERT INTO trust_score (user_id, internal_score, last_updated)
 VALUES (8, 85, NOW());
 
--- Candidate 8: FILTERED - wrong location
+-- Jasmine: FILTERED - wrong state (LA, CA)
 INSERT INTO users (
     first_name, last_name, email, password_hash,
-    date_of_birth, pronouns, gender_identity,
-    sexual_orientation, bio, location_city,
+    date_of_birth, gender_identity,
+    bio, profile_photo_url, location_city,
     location_state, latitude, longitude,
     account_status, created_at, last_login,
     height_inches, religion_id, role_id, tier_id,
@@ -298,8 +298,8 @@ INSERT INTO users (
     astrology, children, political
 ) VALUES (
     'Jasmine', 'Torres', 'jasmine@test.com', 'hashedpassword',
-    '1999-06-15', 'She/Her', 3,
-    1, 'Surf instructor and foodie based in LA', 'Los Angeles',
+    '1999-06-15', 3,
+    'Surf instructor and foodie based in LA', NULL, 'Los Angeles',
     'CA', 34.052235, -118.243683,
     'active', NOW(), NOW(),
     65, 6, 1, 1,
@@ -314,11 +314,11 @@ INSERT INTO users (
 INSERT INTO trust_score (user_id, internal_score, last_updated)
 VALUES (9, 85, NOW());
 
--- Candidate 9: FILTERED - suspended account
+-- Derek: FILTERED - suspended account
 INSERT INTO users (
     first_name, last_name, email, password_hash,
-    date_of_birth, pronouns, gender_identity,
-    sexual_orientation, bio, location_city,
+    date_of_birth, gender_identity,
+    bio, profile_photo_url, location_city,
     location_state, latitude, longitude,
     account_status, created_at, last_login,
     height_inches, religion_id, role_id, tier_id,
@@ -330,8 +330,8 @@ INSERT INTO users (
     astrology, children, political
 ) VALUES (
     'Derek', 'Mills', 'derek@test.com', 'hashedpassword',
-    '1999-06-15', 'He/Him', 3,
-    1, 'Photographer and street art enthusiast', 'Chicago',
+    '1999-06-15', 3,
+    'Photographer and street art enthusiast', NULL, 'Chicago',
     'IL', 41.878113, -87.629799,
     'suspended', NOW(), NOW(),
     64, 6, 1, 1,
@@ -345,4 +345,3 @@ INSERT INTO users (
 
 INSERT INTO trust_score (user_id, internal_score, last_updated)
 VALUES (10, 85, NOW());
-
