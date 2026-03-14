@@ -198,7 +198,7 @@ CREATE TABLE "message" (
   "content" text,
   "sent_at" timestamptz,
   "read_at" timestamptz,
-  "flagged_for_review" bool
+  "flagged_for_review" boolean
 );
 
 CREATE TABLE "reports" (
@@ -231,7 +231,7 @@ CREATE TABLE "photo" (
   "photo_id" serial PRIMARY KEY,
   "user_id" integer,
   "photo_url" varchar,
-  "is_primary" bool,
+  "is_primary" boolean,
   "uploaded_at" timestamptz
 );
 
@@ -259,7 +259,7 @@ CREATE TABLE "verification" (
   "verification_id" serial PRIMARY KEY,
   "user_id" integer,
   "action_type" varchar,
-  "is_verified" bool,
+  "is_verified" boolean,
   "verified_at" timestamptz
 );
 

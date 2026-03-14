@@ -345,17 +345,4 @@ INSERT INTO users (
 
 INSERT INTO trust_score (user_id, internal_score, last_updated)
 VALUES (10, 85, NOW());
-```
 
-**Test Users:**
-1  → Dante Rivera     (main user)
-2  → Beatrice Chen    (perfect match)
-3  → Zendaya Brooks   (good match)
-4  → Olivia Scott     (moderate match)
-5  → Shane Webb      (filtered, trust 25)
-6  → Priya Patel      (filtered, wrong religion)
-7  → Tyler Brooks     (filtered, wrong gender)
-8  → Sandra Nguyen    (filtered, too old)
-9  → Jasmine Torres   (filtered, wrong state)
-10 → Derek Mills      (filtered, suspended)
-```
