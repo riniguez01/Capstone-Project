@@ -4,6 +4,7 @@ import Signup from './pages/Signup'
 import Profile from './pages/Profile'
 import Questionnaire from './pages/Questionnaire'
 import Matching from './pages/Matching'
+import MatchingWithBackend from './pages/MatchingWithBackend'
 import Chat from './pages/Chat'
 import DatePlanner from './pages/DatePlanner'
 import PostDateSurvey from "./components/PostDateSurvey";
@@ -17,7 +18,8 @@ function App() {
             <Route path="/preferences" element={<Preferences />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/questionnaire" element={<Questionnaire />} />
-            <Route path="/matching" element={<Matching />} />
+            <Route path="/matching" element={<MatchingWithBackend />} />  {/* Cindy: swapped to live backend */}
+            <Route path="/matching-mock" element={<Matching />} />         {/* Alex's original — kept for reference */}
             <Route path="/chat" element={<Chat />} />
             <Route path="/dates" element={<DatePlanner />} />
             <Route path="/postDate" element={<PostDateSurvey/>} />
