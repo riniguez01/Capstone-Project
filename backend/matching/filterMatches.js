@@ -1,11 +1,14 @@
 // filterMatches.js
 // Stage 1 of the matching pipeline — hard constraint filtering.
-// Any candidate who fails a single constraint is removed immediately and never scored.
-// All field references match the actual database schema.
+//
+// SPRINT 2 FIXES:
+// - height_cm renamed to height_inches (v4 migration)
+// - Gender check is now one-directional (what the logged-in user wants)
+// - Added location_state filter
+// - Trust elimination threshold raised to 30
 
-const TRUST_ELIMINATION_THRESHOLD = 20; // trust_score <= 20 → removed entirely (1 star and below)
+const TRUST_ELIMINATION_THRESHOLD = 30;
 
-// ─── HELPER: Calculate age from date_of_birth ──────────────────────────────
 function getAge(dateOfBirth) {
     if (!dateOfBirth) return null;
     const today = new Date();
@@ -16,23 +19,12 @@ function getAge(dateOfBirth) {
     return age;
 }
 
-// ─── HELPER: Check mutual gender preference ────────────────────────────────
-// user wants candidate's gender AND candidate wants user's gender
-function mutualGenderMatch(user, candidate) {
-    const userPreferredGenders      = user.preferences?.preferred_genders      || [];
-    const candidatePreferredGenders = candidate.preferences?.preferred_genders || [];
-
-    // If either has no preference set, skip this constraint
-    if (userPreferredGenders.length === 0 || candidatePreferredGenders.length === 0) return true;
-
-    const userWantsCandidate  = userPreferredGenders.includes(candidate.gender_identity);
-    const candidateWantsUser  = candidatePreferredGenders.includes(user.gender_identity);
-    return userWantsCandidate && candidateWantsUser;
+function genderMatch(user, candidate) {
+    const userPreferredGenders = user.preferences?.preferred_genders || [];
+    if (userPreferredGenders.length === 0) return true;
+    return userPreferredGenders.includes(candidate.gender_identity);
 }
 
-// ─── HELPER: Dating goals compatibility ────────────────────────────────────
-// Casual(1) ≠ Long-term(3) is a hard mismatch per feature spec
-// Serious(2) is compatible with Long-term(3) but not Casual(1)
 function datingGoalsCompatible(userGoal, candidateGoal) {
     if (!userGoal || !candidateGoal) return true;
     if (userGoal === candidateGoal) return true;
@@ -41,9 +33,6 @@ function datingGoalsCompatible(userGoal, candidateGoal) {
     return false;
 }
 
-// ─── HELPER: Children preference compatibility ─────────────────────────────
-// Want kids(1) vs Don't want kids(3) is a hard mismatch
-// Have kids(2) and Open(4) are flexible
 function childrenCompatible(userChildren, candidateChildren) {
     if (!userChildren || !candidateChildren) return true;
     if (userChildren === 4 || candidateChildren === 4) return true;
@@ -52,28 +41,26 @@ function childrenCompatible(userChildren, candidateChildren) {
     return true;
 }
 
-// ─── MAIN FILTER FUNCTION ──────────────────────────────────────────────────
 module.exports = function filterMatches(user, candidates) {
-    const prefs   = user.preferences;
-    const userAge = getAge(user.date_of_birth);
+    const prefs = user.preferences;
 
     return candidates.filter(candidate => {
         const candidateAge = getAge(candidate.date_of_birth);
 
-        // ── 1. TRUST SCORE ELIMINATION ──────────────────────────────────────
         if (candidate.trust_score !== null &&
             candidate.trust_score !== undefined &&
             candidate.trust_score <= TRUST_ELIMINATION_THRESHOLD) {
             return false;
         }
 
-        // ── 2. ACCOUNT STATUS ───────────────────────────────────────────────
         if (candidate.account_status !== 'active') return false;
 
-        // ── 3. SKIP IF NO PREFERENCES SET ──────────────────────────────────
+        if (user.location_state && candidate.location_state) {
+            if (user.location_state !== candidate.location_state) return false;
+        }
+
         if (!prefs) return true;
 
-        // ── 4. AGE RANGE ────────────────────────────────────────────────────
         if (prefs.preferred_age_min && candidateAge !== null) {
             if (candidateAge < prefs.preferred_age_min) return false;
         }
@@ -81,26 +68,18 @@ module.exports = function filterMatches(user, candidates) {
             if (candidateAge > prefs.preferred_age_max) return false;
         }
 
-        // ── 5. MUTUAL GENDER PREFERENCE ─────────────────────────────────────
-        if (!mutualGenderMatch(user, candidate)) return false;
+        if (!genderMatch(user, candidate)) return false;
 
-        // ── 6. HEIGHT RANGE (cm) ─────────────────────────────────────────────
-        if (prefs.preferred_height_min && candidate.height_cm !== null) {
-            if (candidate.height_cm < prefs.preferred_height_min) return false;
+        if (prefs.preferred_height_min && candidate.height_inches !== null) {
+            if (candidate.height_inches < prefs.preferred_height_min) return false;
         }
-        if (prefs.preferred_height_max && candidate.height_cm !== null) {
-            if (candidate.height_cm > prefs.preferred_height_max) return false;
+        if (prefs.preferred_height_max && candidate.height_inches !== null) {
+            if (candidate.height_inches > prefs.preferred_height_max) return false;
         }
 
-        // ── 7. DATING GOALS ──────────────────────────────────────────────────
         if (!datingGoalsCompatible(user.dating_goals, candidate.dating_goals)) return false;
 
-        // ── 8. CHILDREN ──────────────────────────────────────────────────────
         if (!childrenCompatible(user.children, candidate.children)) return false;
-
-        // ── NOTE: Smoking is intentionally NOT a hard filter ─────────────────
-        // Smoking preference is handled as a soft signal in scoreMatch.js
-        // to avoid being overly restrictive in the candidate pool.
 
         return true;
     });
