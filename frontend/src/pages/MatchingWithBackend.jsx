@@ -1,16 +1,20 @@
-// MatchingWithBackend.jsx
-// Cindy's integration layer — pulls real matches from backend via UserContext.
-// Alex's Matching.jsx is NOT modified. This file replaces the /matching route
-// in App.jsx and renders the same UI using live data instead of mock data.
-
 import Navbar from "../components/Navbar";
 import Match from "../components/Match";
 import { useEffect, useCallback, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useUser } from "../context/UserContext";
 
 function MatchingWithBackend() {
     const { matches, matchesLoading, matchesError, currentUser, token } = useUser();
     const [currentIndex, setCurrentIndex] = useState(0);
+    const navigate = useNavigate();
+
+    // Redirect to login if not logged in
+    useEffect(() => {
+        if (!currentUser) {
+            navigate("/");
+        }
+    }, [currentUser, navigate]);
 
     // Reset index when matches load
     useEffect(() => {
@@ -54,29 +58,32 @@ function MatchingWithBackend() {
         setCurrentIndex((prev) => Math.min(prev + 1, matches.length - 1));
     };
 
-    if (matchesLoading) {
-        return (
+    if (matchesLoading) return (
+        <>
+            <Navbar />
             <div className="faded-background d-flex justify-content-center align-items-center min-vh-100 min-vw-100">
                 <p className="text-white">Finding your matches...</p>
             </div>
-        );
-    }
+        </>
+    );
 
-    if (matchesError) {
-        return (
+    if (matchesError) return (
+        <>
+            <Navbar />
             <div className="faded-background d-flex justify-content-center align-items-center min-vh-100 min-vw-100">
                 <p className="text-danger">{matchesError}</p>
             </div>
-        );
-    }
+        </>
+    );
 
-    if (matches.length === 0) {
-        return (
+    if (matches.length === 0) return (
+        <>
+            <Navbar />
             <div className="faded-background d-flex justify-content-center align-items-center min-vh-100 min-vw-100">
                 <p className="text-white">No matches found yet.</p>
             </div>
-        );
-    }
+        </>
+    );
 
     return (
         <>
