@@ -1,4 +1,4 @@
-function ChatList({ matches, onSelect }) {
+function ChatList({ matches = [], onSelect }) {
     return (
         <div className="w-100">
             <h5 className="section-title mb-3">Your Matches</h5>
