@@ -102,7 +102,13 @@ exports.submitCheckin = async (req, res) => {
         );
 
 
-        const newStarRating = Math.round(newScore / 20);
+        const starRating = Math.round(newScore / 20);
+
+        const label =
+            newScore >= 80 ? "Highly Trusted" :
+                newScore >= 60 ? "Trusted" :
+                    newScore >= 40 ? "Neutral" :
+                        newScore >= 20 ? "Limited Trust" : "Restricted";
 
         res.status(201).json({
             message: "Checkin submitted successfully.",
@@ -110,7 +116,8 @@ exports.submitCheckin = async (req, res) => {
                 previous: previousScore,
                 updated: newScore,
                 change: scoreChange,
-                star_rating: newStarRating
+                starRating: starRating,
+                label: label
             }
         });
 
