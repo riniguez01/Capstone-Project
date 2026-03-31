@@ -20,11 +20,13 @@ const matchRoutes   = require("./routes/match");
 const authRoutes    = require("./routes/auth");
 const profileRoutes = require("./routes/profile");
 const messageRoutes = require("./routes/messages");
+const checkinRoutes = require("./routes/checkin");
 
 app.use("/matches",  matchRoutes);
 app.use("/auth",     authRoutes);
 app.use("/profile",  profileRoutes);
 app.use("/messages", messageRoutes);
+app.use("/checkin",  checkinRoutes);
 
 app.listen(PORT, () => {
     console.log(`Backend server running on port ${PORT}`);
