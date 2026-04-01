@@ -1,6 +1,5 @@
-const pool = require("../config/db");
-const classifyMessage = require("../safety/classifyMessage");
-const evaluateConversationState = require("../safety/evaluateConversationState");
+const pool            = require("../config/db");
+const { evaluateMessage } = require("../conversation/safetyEngine");
 
 exports.sendMessage = async (req, res) => {
     const { match_id, sender_id, content } = req.body;
@@ -11,7 +10,7 @@ exports.sendMessage = async (req, res) => {
 
     try {
         const matchCheck = await pool.query(
-            "SELECT match_id, match_status FROM matches WHERE match_id = $1",
+            "SELECT match_id, match_status, user1_id, user2_id FROM matches WHERE match_id = $1",
             [match_id]
         );
         if (matchCheck.rows.length === 0) {
@@ -21,64 +20,16 @@ exports.sendMessage = async (req, res) => {
             return res.status(403).json({ error: "Cannot send messages in an inactive match." });
         }
 
-        await pool.query(
-            `INSERT INTO conversation_safety_state
-                (match_id, current_state, consent_proxy_score, unanswered_count,
-                 repeat_request_count, resistance_count, escalation_level, last_updated)
-             VALUES ($1, 'S0', 0.50, 0, 0, 0, 'normal', NOW())
-             ON CONFLICT (match_id) DO NOTHING`,
-            [match_id]
-        );
+        const { user1_id, user2_id } = matchCheck.rows[0];
+        const recipientId = parseInt(sender_id) === user1_id ? user2_id : user1_id;
 
-        const safetyResult = await pool.query(
-            "SELECT * FROM conversation_safety_state WHERE match_id = $1",
-            [match_id]
-        );
-        const safetyRow = safetyResult.rows[0];
+        const evaluation = evaluateMessage(parseInt(match_id), parseInt(sender_id), parseInt(recipientId), content);
 
-        const historyResult = await pool.query(
-            `SELECT sender_id, content, sent_at
-             FROM message
-             WHERE match_id = $1
-             ORDER BY sent_at ASC`,
-            [match_id]
-        );
-        const recentMessages = historyResult.rows;
-
-        const classification = classifyMessage(content);
-        const evaluation = evaluateConversationState(
-            safetyRow,
-            recentMessages,
-            parseInt(sender_id),
-            classification
-        );
-
-        await pool.query(
-            `UPDATE conversation_safety_state SET
-                current_state        = $1,
-                consent_proxy_score  = $2,
-                unanswered_count     = $3,
-                repeat_request_count = $4,
-                resistance_count     = $5,
-                escalation_level     = $6,
-                last_updated         = NOW()
-             WHERE match_id = $7`,
-            [
-                evaluation.finalState,
-                evaluation.newConsentScore,
-                evaluation.newUnanswered,
-                evaluation.newRepeatRequest,
-                evaluation.newResistance,
-                evaluation.escalationLevel,
-                match_id,
-            ]
-        );
-
-        if (evaluation.decision.action === "block") {
+        if (evaluation.decision === "block") {
             return res.status(403).json({
                 blocked:  true,
-                reason:   evaluation.decision.reason,
-                cooldown: evaluation.decision.cooldown,
+                reason:   evaluation.reason,
+                cooldown: evaluation.cooldownApplied,
             });
         }
 
@@ -94,8 +45,8 @@ exports.sendMessage = async (req, res) => {
             data:    result.rows[0],
         };
 
-        if (evaluation.decision.action === "warn") {
-            response.warning = evaluation.decision.reason;
+        if (evaluation.decision === "prompt") {
+            response.warning = evaluation.reason;
         }
 
         res.status(201).json(response);

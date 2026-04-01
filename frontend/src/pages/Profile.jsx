@@ -1,8 +1,9 @@
 import Navbar from "../components/Navbar";
 import StarRating from "../components/StarRating";
 import { useUser } from "../context/UserContext";
-import beatrice from "../assets/beatrice.png";
-import {useState} from "react";
+import { useState } from "react";
+
+const API = "http://localhost:4000";
 
 function ToggleGroup({ options, value, onChange }) {
     return (
@@ -22,42 +23,86 @@ function ToggleGroup({ options, value, onChange }) {
 }
 
 function Profile() {
-    const { profile, setProfile, preferences, setPreferences } = useUser();
-    const updateProfile = (field, value) => setProfile((prev) => ({ ...prev, [field]: value }));
-    const updatePref = (field, value) => setPreferences((prev) => ({ ...prev, [field]: value }));
+    const { profile, setProfile, preferences, setPreferences, currentUser, token } = useUser();
+    const [saveStatus, setSaveStatus] = useState(null);
+    const [saving, setSaving] = useState(false);
 
-    const starRating = 3;
+    const updateProfile = (field, value) => setProfile((prev) => ({ ...prev, [field]: value }));
+    const updatePref    = (field, value) => setPreferences((prev) => ({ ...prev, [field]: value }));
 
     const inchesToDisplay = (inches) => {
-        const ft = Math.floor(inches / 12);
+        const ft   = Math.floor(inches / 12);
         const inch = inches % 12;
         return `${ft}'${inch}"`;
     };
 
-    // const [profilePic, setProfilePic] = useState(beatrice);
-
-    const profilePic = profile.profilePic || beatrice;
+    const isValidPhotoUrl = (url) => url && (url.startsWith("http") || url.startsWith("data:"));
+    const profilePic = isValidPhotoUrl(profile.profilePic) ? profile.profilePic : null;
 
     const handleImageChange = (e) => {
         const file = e.target.files[0];
-        if (file) {
-            const url = URL.createObjectURL(file);
-            //setProfilePic(url);
-            updateProfile("profilePic", url);
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            updateProfile("profilePic", reader.result);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleSave = async () => {
+        if (!currentUser || !token) return;
+        setSaving(true);
+        setSaveStatus(null);
+
+        try {
+            const profileRes = await fetch(`${API}/profile/save`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({
+                    name, location, bio, height, gender, religion, ethnicity, education,
+                    familyOriented, smoker, drinker, coffeeDrinker, diet, activityLevel,
+                    musicPref, gamer, reader, travel, pets, personality, datingGoal,
+                    astrology, children, politicalStanding,
+                }),
+            });
+
+            const prefRes = await fetch(`${API}/profile/preferences`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ ...preferences }),
+            });
+
+            if (profilePic && profilePic.startsWith("data:")) {
+                await fetch(`${API}/profile/photo`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ photo_url: profilePic }),
+                });
+            }
+
+            if (profileRes.ok && prefRes.ok) {
+                setSaveStatus("success");
+            } else {
+                const d1 = await profileRes.json().catch(() => ({}));
+                const d2 = await prefRes.json().catch(() => ({}));
+                console.error("Save error:", d1, d2);
+                setSaveStatus("error");
+            }
+        } catch (err) {
+            console.error("Save failed:", err);
+            setSaveStatus("error");
+        } finally {
+            setSaving(false);
+            setTimeout(() => setSaveStatus(null), 3000);
         }
     };
 
-    const handleSave = () => {
-        // BACKEND DISABLED
-        /*
-        fetch("/api/save-profile", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ profile, preferences })
-        });
-        */
-        alert("Profile saved successfully!");
-    };
+    const { name, location, bio, height, gender, religion, ethnicity, education,
+        familyOriented, smoker, drinker, coffeeDrinker, diet, activityLevel,
+        musicPref, gamer, reader, travel, pets, personality, datingGoal,
+        astrology, children, politicalStanding } = profile;
+
+    const starRating = 3;
 
     return (
         <>
@@ -65,23 +110,34 @@ function Profile() {
             <div className="container d-flex justify-content-center align-items-center text-center faded-background min-vh-100 min-vw-100">
                 <div className="login-card p-4 text-center mb-4">
 
-                    <div className="bg-white" style={{ position: "relative" }}>
-                        <img
-                            src={profilePic}
-                            className="rounded mb-3 mt-5"
-                            alt="profile"
-                            style={{ width: "70%", aspectRatio: "1/1", objectFit: "cover", cursor: "pointer" }}
-                            onClick={() => document.getElementById("picUpload").click()}
-                        />
+                    <div className="profile-photo-section">
+                        {profilePic ? (
+                            <img
+                                src={profilePic}
+                                className="rounded mb-3 mt-5 profile-photo-img"
+                                alt="profile"
+                                onClick={() => document.getElementById("picUpload").click()}
+                            />
+                        ) : (
+                            <div
+                                className="profile-photo-placeholder mb-3 mt-5"
+                                onClick={() => document.getElementById("picUpload").click()}
+                            >
+                                {profile.name ? profile.name.charAt(0).toUpperCase() : "?"}
+                            </div>
+                        )}
                         <input
                             id="picUpload"
                             type="file"
                             accept="image/*"
-                            style={{ display: "none" }}
+                            className="d-none"
                             onChange={handleImageChange}
                         />
-                        <div className="text-muted small mb-2 bi-camera" style={{ cursor: "pointer" }} onClick={() => document.getElementById("picUpload").click()}>
-                            -Change Photo
+                        <div
+                            className="text-muted small mb-2 profile-change-photo"
+                            onClick={() => document.getElementById("picUpload").click()}
+                        >
+                            Change Photo
                         </div>
                         <div className="pb-2">
                             <StarRating rating={starRating} />
@@ -111,17 +167,10 @@ function Profile() {
                         <label>Religion</label>
                         <select className="form-select" value={profile.religion} onChange={(e) => updateProfile("religion", e.target.value)}>
                             <option value="">Select...</option>
-                            <option>Atheist</option>
-                            <option>Agnostic</option>
-                            <option>Buddhist</option>
-                            <option>Catholic</option>
-                            <option>Christian</option>
-                            <option>Hindu</option>
-                            <option>Jewish</option>
-                            <option>Mormon</option>
-                            <option>Muslim</option>
-                            <option>Spiritual (non-religious)</option>
-                            <option>Other</option>
+                            <option>Atheist</option><option>Agnostic</option><option>Buddhist</option>
+                            <option>Catholic</option><option>Christian</option><option>Hindu</option>
+                            <option>Jewish</option><option>Mormon</option><option>Muslim</option>
+                            <option>Spiritual (non-religious)</option><option>Other</option>
                             <option>Prefer not to say</option>
                         </select>
                     </div>
@@ -130,16 +179,11 @@ function Profile() {
                         <label>Ethnicity</label>
                         <select className="form-select" value={profile.ethnicity} onChange={(e) => updateProfile("ethnicity", e.target.value)}>
                             <option value="">Select...</option>
-                            <option>Asian</option>
-                            <option>Black / African American</option>
-                            <option>Hispanic / Latino</option>
-                            <option>Middle Eastern</option>
-                            <option>Native American</option>
-                            <option>Pacific Islander</option>
-                            <option>White / Caucasian</option>
-                            <option>Multiracial</option>
-                            <option>Other</option>
-                            <option>Prefer not to say</option>
+                            <option>Asian</option><option>Black / African American</option>
+                            <option>Hispanic / Latino</option><option>Middle Eastern</option>
+                            <option>Native American</option><option>Pacific Islander</option>
+                            <option>White / Caucasian</option><option>Multiracial</option>
+                            <option>Other</option><option>Prefer not to say</option>
                         </select>
                     </div>
 
@@ -147,12 +191,9 @@ function Profile() {
                         <label>Education</label>
                         <select className="form-select" value={profile.education} onChange={(e) => updateProfile("education", e.target.value)}>
                             <option value="">Select...</option>
-                            <option>High School</option>
-                            <option>Some College</option>
-                            <option>Associate's Degree</option>
-                            <option>Bachelor's Degree</option>
-                            <option>Master's Degree</option>
-                            <option>Doctorate / PhD</option>
+                            <option>High School</option><option>Some College</option>
+                            <option>Associate's Degree</option><option>Bachelor's Degree</option>
+                            <option>Master's Degree</option><option>Doctorate / PhD</option>
                             <option>Trade</option>
                         </select>
                     </div>
@@ -160,10 +201,7 @@ function Profile() {
                     <div className="mb-3 text-start">
                         <label>Your Height: {inchesToDisplay(profile.height)}</label>
                         <input
-                            type="range"
-                            min="48"
-                            max="96"
-                            value={profile.height}
+                            type="range" min="48" max="96" value={profile.height}
                             onChange={(e) => updateProfile("height", Number(e.target.value))}
                             className="single-range mt-1"
                         />
@@ -207,17 +245,10 @@ function Profile() {
                         <label>Music Preference</label>
                         <select className="form-select" value={profile.musicPref} onChange={(e) => updateProfile("musicPref", e.target.value)}>
                             <option value="">Select...</option>
-                            <option>Pop</option>
-                            <option>Hip-Hop / Rap</option>
-                            <option>R&amp;B / Soul</option>
-                            <option>Rock</option>
-                            <option>Country</option>
-                            <option>Electronic / EDM</option>
-                            <option>Jazz / Blues</option>
-                            <option>Classical</option>
-                            <option>Latin</option>
-                            <option>Everything</option>
-                            <option>Other</option>
+                            <option>Pop</option><option>Hip-Hop / Rap</option><option>R&amp;B / Soul</option>
+                            <option>Rock</option><option>Country</option><option>Electronic / EDM</option>
+                            <option>Jazz / Blues</option><option>Classical</option><option>Latin</option>
+                            <option>Everything</option><option>Other</option>
                         </select>
                     </div>
 
@@ -240,11 +271,8 @@ function Profile() {
                         <label>Animals / Pets</label>
                         <select className="form-select" value={profile.pets} onChange={(e) => updateProfile("pets", e.target.value)}>
                             <option value="">Select...</option>
-                            <option>Love animals</option>
-                            <option>Have pets</option>
-                            <option>Allergic</option>
-                            <option>Not a fan</option>
-                            <option>Neutral</option>
+                            <option>Love animals</option><option>Have pets</option>
+                            <option>Allergic</option><option>Not a fan</option><option>Neutral</option>
                         </select>
                     </div>
 
@@ -264,13 +292,9 @@ function Profile() {
                         <label>What's your political standing?</label>
                         <select className="form-select" value={profile.politicalStanding} onChange={(e) => updateProfile("politicalStanding", e.target.value)}>
                             <option value="">Select...</option>
-                            <option>Very Liberal</option>
-                            <option>Liberal</option>
-                            <option>Moderate</option>
-                            <option>Conservative</option>
-                            <option>Very Conservative</option>
-                            <option>Apolitical</option>
-                            <option>Prefer not to say</option>
+                            <option>Very Liberal</option><option>Liberal</option><option>Moderate</option>
+                            <option>Conservative</option><option>Very Conservative</option>
+                            <option>Apolitical</option><option>Prefer not to say</option>
                         </select>
                     </div>
 
@@ -294,18 +318,10 @@ function Profile() {
                         <label>Astrology Sign (optional)</label>
                         <select className="form-select" value={profile.astrology} onChange={(e) => updateProfile("astrology", e.target.value)}>
                             <option value="">Select...</option>
-                            <option>Aries</option>
-                            <option>Taurus</option>
-                            <option>Gemini</option>
-                            <option>Cancer</option>
-                            <option>Leo</option>
-                            <option>Virgo</option>
-                            <option>Libra</option>
-                            <option>Scorpio</option>
-                            <option>Sagittarius</option>
-                            <option>Capricorn</option>
-                            <option>Aquarius</option>
-                            <option>Pisces</option>
+                            <option>Aries</option><option>Taurus</option><option>Gemini</option>
+                            <option>Cancer</option><option>Leo</option><option>Virgo</option>
+                            <option>Libra</option><option>Scorpio</option><option>Sagittarius</option>
+                            <option>Capricorn</option><option>Aquarius</option><option>Pisces</option>
                         </select>
                     </div>
 
@@ -318,7 +334,7 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Age Range: {preferences.minAge} – {preferences.maxAge}</label>
-                        <div style={{ position: "relative", height: "30px" }}>
+                        <div className="dual-range-wrap">
                             <input type="range" min="18" max="100" value={preferences.minAge}
                                    onChange={(e) => updatePref("minAge", Math.min(Number(e.target.value), preferences.maxAge - 1))}
                                    className="dual-range dual-range-min" />
@@ -330,7 +346,7 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Height Range: {inchesToDisplay(preferences.minHeight)} – {inchesToDisplay(preferences.maxHeight)}</label>
-                        <div style={{ position: "relative", height: "30px" }}>
+                        <div className="dual-range-wrap">
                             <input type="range" min="48" max="96" value={preferences.minHeight}
                                    onChange={(e) => updatePref("minHeight", Math.min(Number(e.target.value), preferences.maxHeight - 1))}
                                    className="dual-range dual-range-min" />
@@ -344,15 +360,9 @@ function Profile() {
                         <label>Religion Preference</label>
                         <select className="form-select" value={preferences.religionPref} onChange={(e) => updatePref("religionPref", e.target.value)}>
                             <option value="">No preference</option>
-                            <option>Atheist</option>
-                            <option>Agnostic</option>
-                            <option>Buddhist</option>
-                            <option>Catholic</option>
-                            <option>Christian</option>
-                            <option>Hindu</option>
-                            <option>Jewish</option>
-                            <option>Mormon</option>
-                            <option>Muslim</option>
+                            <option>Atheist</option><option>Agnostic</option><option>Buddhist</option>
+                            <option>Catholic</option><option>Christian</option><option>Hindu</option>
+                            <option>Jewish</option><option>Mormon</option><option>Muslim</option>
                             <option>Spiritual (non-religious)</option>
                         </select>
                     </div>
@@ -361,14 +371,10 @@ function Profile() {
                         <label>Ethnicity Preference</label>
                         <select className="form-select" value={preferences.ethnicityPref} onChange={(e) => updatePref("ethnicityPref", e.target.value)}>
                             <option value="">No preference</option>
-                            <option>Asian</option>
-                            <option>Black / African American</option>
-                            <option>Hispanic / Latino</option>
-                            <option>Middle Eastern</option>
-                            <option>Native American</option>
-                            <option>Pacific Islander</option>
-                            <option>White / Caucasian</option>
-                            <option>Multiracial</option>
+                            <option>Asian</option><option>Black / African American</option>
+                            <option>Hispanic / Latino</option><option>Middle Eastern</option>
+                            <option>Native American</option><option>Pacific Islander</option>
+                            <option>White / Caucasian</option><option>Multiracial</option>
                         </select>
                     </div>
 
@@ -376,18 +382,14 @@ function Profile() {
                         <label>Political Preference</label>
                         <select className="form-select" value={preferences.politicalPref} onChange={(e) => updatePref("politicalPref", e.target.value)}>
                             <option value="">No preference</option>
-                            <option>Very Liberal</option>
-                            <option>Liberal</option>
-                            <option>Moderate</option>
-                            <option>Conservative</option>
-                            <option>Very Conservative</option>
-                            <option>Apolitical</option>
+                            <option>Very Liberal</option><option>Liberal</option><option>Moderate</option>
+                            <option>Conservative</option><option>Very Conservative</option><option>Apolitical</option>
                         </select>
                     </div>
 
                     <div className="mb-3 text-start">
                         <label>Children Preference</label>
-                        <ToggleGroup options={["Has kids", "Wants kids", "No kids", "No preference"]} value={preferences.childrenPref} onChange={(v) => updatePref("childrenPref", v)} />
+                        <ToggleGroup options={["Have kids", "Want kids", "Don't want kids", "Open"]} value={preferences.childrenPref} onChange={(v) => updatePref("childrenPref", v)} />
                     </div>
 
                     <div className="mb-3 text-start">
@@ -397,17 +399,22 @@ function Profile() {
 
                     <div className="mb-4 text-start">
                         <label>Dating Goals Preference</label>
-                        <ToggleGroup options={["Casual", "Serious", "Long-term", "No preference"]} value={preferences.datingGoalPref} onChange={(v) => updatePref("datingGoalPref", v)} />
+                        <ToggleGroup options={["Casual", "Serious", "Long-term"]} value={preferences.datingGoalPref} onChange={(v) => updatePref("datingGoalPref", v)} />
                     </div>
 
+                    {saveStatus === "success" && (
+                        <div className="alert alert-success py-2 mb-3">Profile saved successfully!</div>
+                    )}
+                    {saveStatus === "error" && (
+                        <div className="alert alert-danger py-2 mb-3">Failed to save. Please try again.</div>
+                    )}
+
                     <div>
-                        <button className="btn btn-danger me-2 mb-2">
-                            Get Aura +
-                        </button>
+                        <button className="btn btn-danger me-2 mb-2">Get Aura +</button>
                     </div>
                     <div>
-                        <button className="btn btn-outline-danger me-2" onClick={handleSave}>
-                            Save
+                        <button className="btn btn-outline-danger me-2" onClick={handleSave} disabled={saving}>
+                            {saving ? "Saving..." : "Save"}
                         </button>
                     </div>
 

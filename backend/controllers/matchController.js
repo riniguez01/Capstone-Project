@@ -1,4 +1,3 @@
-// matchController.js
 const generateMatches = require("../services/matchingService");
 const { getUserById, getCandidates } = require("../services/userService");
 const pool = require("../config/db");
@@ -59,7 +58,6 @@ exports.getMatches = async (req, res) => {
         const shouldRank = req.query.ranked !== "false";
         const user = await getUserById(userId);
         if (!user) return res.status(404).json({ error: "User not found" });
-        if (!user.preferences) return res.status(400).json({ error: "User has no preferences set" });
 
         const candidates = await getCandidates(userId);
         const matches = await generateMatches(user, candidates, shouldRank);
@@ -75,40 +73,33 @@ exports.getMatches = async (req, res) => {
             const avatarUrl = `https://ui-avatars.com/api/?background=c94b5b&color=fff&size=300&name=${encodeURIComponent((c.first_name || "") + "+" + (c.last_name || ""))}`;
 
             return {
-                // Identity
                 user_id:              c.user_id,
                 name:                 `${c.first_name} ${c.last_name}`.trim(),
-                first_name:           c.first_name      || null,
-                last_name:            c.last_name       || null,
+                first_name:           c.first_name              || null,
+                last_name:            c.last_name               || null,
                 age:                  getAge(c.date_of_birth),
-                gender:               c.gender_name     || null,
+                gender:               c.gender_name             || null,
                 height:               inchesToDisplay(c.height_inches),
-                // Location
                 location:             c.location_city
                     ? `${c.location_city}${c.location_state ? ", " + c.location_state : ""}`.trim()
                     : null,
-                location_city:        c.location_city   || null,
-                location_state:       c.location_state  || null,
-                // Bio
-                bio:                  c.bio             || null,
-                // Photo
-                image:                c.profile_photo_url || avatarUrl,
-                // Trust
+                location_city:        c.location_city           || null,
+                location_state:       c.location_state          || null,
+                bio:                  c.bio                     || null,
+                image:                c.profile_photo_url       || avatarUrl,
                 starRating:           trustToStars(c.trust_score),
-                // ── All lookup display names ──────────────────────────
-                religion_name:        c.religion_name        || null,
-                activity_name:        c.activity_name        || null,
-                children_name:        c.children_name        || null,
-                political_name:       c.political_name       || null,
-                dating_goals_name:    c.dating_goals_name    || null,
-                smoking_name:         c.smoking_name         || null,
-                drinking_name:        c.drinking_name        || null,
-                diet_name:            c.diet_name            || null,
-                music_name:           c.music_name           || null,
-                family_oriented_name: c.family_oriented_name || null,
-                personality_name:     c.personality_type_name|| null,
-                education_name:       c.education_career_name|| null,
-                // Score info
+                religion_name:        c.religion_name           || null,
+                activity_name:        c.activity_name           || null,
+                children_name:        c.children_name           || null,
+                political_name:       c.political_name          || null,
+                dating_goals_name:    c.dating_goals_name       || null,
+                smoking_name:         c.smoking_name            || null,
+                drinking_name:        c.drinking_name           || null,
+                diet_name:            c.diet_name               || null,
+                music_name:           c.music_name              || null,
+                family_oriented_name: c.family_oriented_name    || null,
+                personality_name:     c.personality_type_name   || null,
+                education_name:       c.education_career_name   || null,
                 score:                match.score,
                 raw_score:            match.raw_score,
                 trust_penalized:      match.trust_penalized,
@@ -200,5 +191,49 @@ exports.likeUser = async (req, res) => {
     } catch (err) {
         console.error("likeUser error:", err.message);
         res.status(500).json({ error: "Failed to record like" });
+    }
+};
+
+exports.getMutualMatches = async (req, res) => {
+    try {
+        const userId = parseInt(req.params.userId);
+        if (isNaN(userId)) return res.status(400).json({ error: "Invalid user ID" });
+
+        const result = await pool.query(
+            `SELECT
+                m.match_id,
+                m.matched_at,
+                CASE WHEN m.user1_id = $1 THEN m.user2_id ELSE m.user1_id END AS other_user_id,
+                CASE WHEN m.user1_id = $1 THEN u2.first_name ELSE u1.first_name END AS first_name,
+                CASE WHEN m.user1_id = $1 THEN u2.last_name  ELSE u1.last_name  END AS last_name,
+                CASE WHEN m.user1_id = $1 THEN u2.profile_photo_url ELSE u1.profile_photo_url END AS profile_photo_url,
+                (SELECT content FROM message WHERE match_id = m.match_id ORDER BY sent_at DESC LIMIT 1) AS last_message,
+                (SELECT sent_at  FROM message WHERE match_id = m.match_id ORDER BY sent_at DESC LIMIT 1) AS last_message_at,
+                (SELECT COUNT(*) FROM message WHERE match_id = m.match_id AND sender_id != $1 AND read_at IS NULL) AS unread_count
+            FROM matches m
+            JOIN users u1 ON u1.user_id = m.user1_id
+            JOIN users u2 ON u2.user_id = m.user2_id
+            WHERE (m.user1_id = $1 OR m.user2_id = $1)
+              AND m.match_status = 'active'
+            ORDER BY last_message_at DESC NULLS LAST`,
+            [userId]
+        );
+
+        const matches = result.rows.map(row => ({
+            match_id:        row.match_id,
+            user_id:         row.other_user_id,
+            name:            `${row.first_name} ${row.last_name}`.trim(),
+            image:           row.profile_photo_url ||
+                `https://ui-avatars.com/api/?background=c94b5b&color=fff&size=300&name=${encodeURIComponent(row.first_name + "+" + row.last_name)}`,
+            last_message:    row.last_message    || "",
+            last_message_at: row.last_message_at || null,
+            unread_count:    parseInt(row.unread_count),
+            matched_at:      row.matched_at,
+        }));
+
+        res.json({ matches });
+    } catch (err) {
+        console.error("getMutualMatches error:", err.message);
+        res.status(500).json({ error: "Failed to fetch mutual matches." });
     }
 };
