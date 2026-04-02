@@ -56,15 +56,16 @@ exports.submitCheckin = async (req, res) => {
         if (comfort_level <= 2)
             scoreChange -= 3;
         if (comfort_level >= 4)
-            scoreChange += 2;
+            scoreChange += 1;
         if (felt_safe === "Yes")
             scoreChange += 2;
         if (boundaries_respected === "Yes")
             scoreChange += 2;
-        if (would_meet_again === "yes")
+        if (would_meet_again === "Yes")
             scoreChange += 2;
-        if (would_meet_again === "no")
+        if (would_meet_again === "No")
             scoreChange -= 2;
+
 
 
         const trustResult = await pool.query(
@@ -88,7 +89,7 @@ exports.submitCheckin = async (req, res) => {
             [newScore, reviewed_user_id]
         );
 
-        // Step 5 — Log to trust_score_history
+
         await pool.query(
             `INSERT INTO trust_score_history
                  (user_id, score_before, score_after, change_reason, created_at)
@@ -101,14 +102,22 @@ exports.submitCheckin = async (req, res) => {
             ]
         );
 
+        const dateCount = await pool.query(
+            `SELECT COUNT(*) FROM post_date_checkin 
+            WHERE reviewed_user_id = $1`,
+            [reviewed_user_id]
+        );
 
-        const starRating = Math.round(newScore / 20);
+        const totalDates = parseInt(dateCount.rows[0].count);
+
+        const starRating = totalDates < 3 ? null : Math.round(newScore / 20);
 
         const label =
+            totalDates < 3 ? "New User" :
             newScore >= 80 ? "Highly Trusted" :
-                newScore >= 60 ? "Trusted" :
-                    newScore >= 40 ? "Neutral" :
-                        newScore >= 20 ? "Limited Trust" : "Restricted";
+            newScore >= 60 ? "Trusted" :
+            newScore >= 40 ? "Neutral" :
+            newScore >= 20 ? "Limited Trust" : "Restricted";
 
         res.status(201).json({
             message: "Checkin submitted successfully.",
@@ -123,7 +132,7 @@ exports.submitCheckin = async (req, res) => {
 
     } catch (err) {
         console.error("submitCheckin error:", err.message);
-        res.status(500).json({error: "Failed to submit checkin."});
+        res.status(500).json({error: "Failed to submit survey check-in."});
     }
 };
 
