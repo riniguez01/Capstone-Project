@@ -1,3 +1,4 @@
+
 const pool = require("../config/db");
 
 exports.submitCheckin = async (req, res) => {
@@ -114,10 +115,10 @@ exports.submitCheckin = async (req, res) => {
 
         const label =
             totalDates < 3 ? "New User" :
-            newScore >= 80 ? "Highly Trusted" :
-            newScore >= 60 ? "Trusted" :
-            newScore >= 40 ? "Neutral" :
-            newScore >= 20 ? "Limited Trust" : "Restricted";
+                newScore >= 80 ? "Highly Trusted" :
+                    newScore >= 60 ? "Trusted" :
+                        newScore >= 40 ? "Neutral" :
+                            newScore >= 20 ? "Limited Trust" : "Restricted";
 
         res.status(201).json({
             message: "Checkin submitted successfully.",

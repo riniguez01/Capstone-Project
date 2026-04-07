@@ -1,26 +1,90 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { io } from "socket.io-client";
+import { useUser } from "../context/UserContext";
+
+const API = "http://localhost:4000";
 
 function ChatWindow({ match, onBack }) {
     const navigate = useNavigate();
-    const [messages, setMessages] = useState([
-        { from: "them", text: `Hey! We matched 😊` }
-    ]);
-    const [input, setInput] = useState("");
+    const { currentUser, token } = useUser();
+    const [matchId, setMatchId]     = useState(match?.match_id || null);
+    const [messages, setMessages]   = useState([]);
+    const [input, setInput]         = useState("");
+    const [warning, setWarning]     = useState(null);
+    const [blocked, setBlocked]     = useState(null);
+    const [loading, setLoading]     = useState(true);
+    const socketRef                 = useRef(null);
+    const bottomRef                 = useRef(null);
 
-    const handleSend = (text = input.trim()) => {
-        if (!text) return;
-        setMessages((prev) => [...prev, { from: "me", text }]);
-        setInput("");
+    useEffect(() => {
+        if (!match?.user_id || !token || matchId) return;
+        fetch(`${API}/matches/${currentUser.user_id}/mutual`, {
+            headers: { Authorization: `Bearer ${token}` },
+        })
+            .then(r => r.json())
+            .then(data => {
+                const found = (data.matches || []).find(m => m.user_id === match.user_id);
+                if (found) setMatchId(found.match_id);
+            })
+            .catch(() => {});
+    }, [match?.user_id, token, matchId, currentUser]);
 
-        // BACKEND DISABLED
-        /*
-        fetch("/api/send-message", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ to: match.name, text })
+    useEffect(() => {
+        if (!matchId || !token) return;
+
+        fetch(`${API}/messages/${matchId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        })
+            .then(r => r.json())
+            .then(data => {
+                if (data.messages) setMessages(data.messages);
+                setLoading(false);
+            })
+            .catch(() => setLoading(false));
+
+        const socket = io(API, {
+            auth: { token },
+            transports: ["websocket"],
         });
-        */
+        socketRef.current = socket;
+
+        socket.emit("join_match", { match_id: matchId });
+
+        socket.on("new_message", (msg) => {
+            setMessages(prev => [...prev, msg]);
+        });
+
+        socket.on("safety_prompt", ({ reason }) => {
+            setWarning(reason);
+            setTimeout(() => setWarning(null), 5000);
+        });
+
+        socket.on("message_blocked", ({ reason }) => {
+            setBlocked(reason);
+            setTimeout(() => setBlocked(null), 6000);
+        });
+
+        return () => {
+            socket.emit("leave_match", { match_id: matchId });
+            socket.disconnect();
+        };
+    }, [matchId, token]);
+
+    useEffect(() => {
+        bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [messages]);
+
+    const handleSend = () => {
+        const text = input.trim();
+        if (!text || !socketRef.current || !matchId) return;
+        setInput("");
+        setWarning(null);
+        setBlocked(null);
+        socketRef.current.emit("send_message", {
+            match_id: matchId,
+            content:  text,
+        });
     };
 
     const handleKeyDown = (e) => {
@@ -31,75 +95,79 @@ function ChatWindow({ match, onBack }) {
         navigate("/dates", { state: { match, returnTo: "/chat" } });
     };
 
-    return (
-        <div className="d-flex flex-column w-100" style={{ height: "80vh" }}>
+    const formatTime = (ts) => {
+        if (!ts) return "";
+        return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    };
 
-            <div
-                className="d-flex align-items-center gap-3 p-3 mb-3 rounded"
-                style={{ background: "white", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}
-            >
+    return (
+        <div className="d-flex flex-column w-100 chat-window-wrap">
+            <div className="d-flex align-items-center gap-3 p-3 mb-3 rounded chat-header">
                 <button className="btn btn-sm btn-outline-danger" onClick={onBack}>
                     ‹ Back
                 </button>
                 <img
                     src={match.image}
                     alt={match.name}
-                    style={{
-                        width: "42px",
-                        height: "42px",
-                        borderRadius: "50%",
-                        objectFit: "cover",
-                        border: "2px solid #c94b5b"
-                    }}
+                    className="chat-avatar"
                 />
                 <div className="fw-bold">{match.name}</div>
                 <button
                     className="btn btn-sm btn-danger ms-auto bi-calendar-week"
                     onClick={handleRequestDate}
                 >
-                    - Plan Date
+                    Plan Date
                 </button>
             </div>
 
-            <div
-                className="flex-grow-1 overflow-auto px-2 mb-3 d-flex flex-column gap-2"
-                style={{ scrollBehavior: "smooth" }}
-            >
-                {messages.map((msg, i) => (
-                    <div
-                        key={i}
-                        className={`d-flex ${msg.from === "me" ? "justify-content-end" : "justify-content-start"}`}
-                    >
-                        <div
-                            style={{
-                                maxWidth: "70%",
-                                padding: "10px 14px",
-                                borderRadius: msg.from === "me" ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                                background: msg.from === "me" ? "#a8001c" : "white",
-                                color: msg.from === "me" ? "white" : "black",
-                                boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
-                                fontSize: "0.95rem"
-                            }}
-                        >
-                            {msg.text}
-                        </div>
+            {warning && (
+                <div className="alert alert-warning py-2 px-3 mb-2 small">
+                    ⚠️ {warning}
+                </div>
+            )}
+            {blocked && (
+                <div className="alert alert-danger py-2 px-3 mb-2 small">
+                    🚫 {blocked}
+                </div>
+            )}
+
+            <div className="flex-grow-1 overflow-auto px-2 mb-3 d-flex flex-column gap-2 chat-message-list">
+                {loading && (
+                    <div className="text-center text-muted small pt-3">Loading messages...</div>
+                )}
+                {!loading && messages.length === 0 && (
+                    <div className="text-center text-muted small pt-3">
+                        Say hello to {match.name}!
                     </div>
-                ))}
+                )}
+                {messages.map((msg, i) => {
+                    const isMe = msg.sender_id === currentUser?.user_id;
+                    return (
+                        <div
+                            key={msg.message_id || i}
+                            className={`d-flex ${isMe ? "justify-content-end" : "justify-content-start"}`}
+                        >
+                            <div className={`chat-bubble ${isMe ? "chat-bubble--me" : "chat-bubble--them"}`}>
+                                <div>{msg.content}</div>
+                                <div className="chat-bubble__time">{formatTime(msg.sent_at)}</div>
+                            </div>
+                        </div>
+                    );
+                })}
+                <div ref={bottomRef} />
             </div>
 
             <div className="d-flex gap-2">
                 <input
-                    className="form-control"
+                    className="form-control chat-input"
                     placeholder="Type a message..."
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    style={{ borderRadius: "20px" }}
                 />
                 <button
-                    className="btn btn-danger"
-                    onClick={() => handleSend()}
-                    style={{ borderRadius: "20px", paddingInline: "20px" }}
+                    className="btn btn-danger chat-send-btn"
+                    onClick={handleSend}
                 >
                     Send
                 </button>

@@ -49,37 +49,48 @@ const VENUES = [
 ];
 
 const TIME_SLOTS = [
-    { label: "Friday 6PM – 10PM",    day: "friday",   start: "18:00", end: "22:00" },
-    { label: "Saturday 12PM – 5PM",  day: "saturday",  start: "12:00", end: "17:00" },
-    { label: "Saturday 6PM – 10PM",  day: "saturday",  start: "18:00", end: "22:00" },
-    { label: "Sunday 12PM – 5PM",    day: "sunday",    start: "12:00", end: "17:00" },
-    { label: "Sunday 6PM – 9PM",     day: "sunday",    start: "18:00", end: "21:00" },
+    { label: "Friday 6PM – 10PM",   day: "friday",   start: "18:00", end: "22:00" },
+    { label: "Saturday 12PM – 5PM", day: "saturday", start: "12:00", end: "17:00" },
+    { label: "Saturday 6PM – 10PM", day: "saturday", start: "18:00", end: "22:00" },
+    { label: "Sunday 12PM – 5PM",   day: "sunday",   start: "12:00", end: "17:00" },
+    { label: "Sunday 6PM – 9PM",    day: "sunday",   start: "18:00", end: "21:00" },
 ];
 
 function VenueMap({ venues, selectedVenue, onSelect }) {
-    const mapRef    = useRef(null);
-    const mapObjRef = useRef(null);
+    const mapRef     = useRef(null);
+    const mapObjRef  = useRef(null);
     const markersRef = useRef([]);
 
     useEffect(() => {
-        if (!window.L) return;
         if (mapObjRef.current) return;
 
-        const map = window.L.map(mapRef.current).setView([41.8827, -87.6233], 13);
-        mapObjRef.current = map;
+        const init = () => {
+            if (!window.L || !mapRef.current) return false;
 
-        window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: "© OpenStreetMap contributors",
-        }).addTo(map);
+            const map = window.L.map(mapRef.current).setView([41.8827, -87.6233], 13);
+            mapObjRef.current = map;
 
-        venues.forEach((venue) => {
-            const marker = window.L.marker([venue.lat, venue.lng])
-                .addTo(map)
-                .bindPopup(`<b>${venue.icon} ${venue.name}</b><br/>${venue.suggestion}`);
+            window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                attribution: "© OpenStreetMap contributors",
+            }).addTo(map);
 
-            marker.on("click", () => onSelect(venue));
-            markersRef.current.push({ marker, venue });
-        });
+            venues.forEach((venue) => {
+                const marker = window.L.marker([venue.lat, venue.lng])
+                    .addTo(map)
+                    .bindPopup(`<b>${venue.icon} ${venue.name}</b><br/>${venue.suggestion}`);
+
+                marker.on("click", () => onSelect(venue));
+                markersRef.current.push({ marker, venue });
+            });
+            return true;
+        };
+
+        if (!init()) {
+            const interval = setInterval(() => {
+                if (init()) clearInterval(interval);
+            }, 100);
+            return () => clearInterval(interval);
+        }
     }, []);
 
     useEffect(() => {
@@ -87,20 +98,8 @@ function VenueMap({ venues, selectedVenue, onSelect }) {
         markersRef.current.forEach(({ marker, venue }) => {
             const icon = window.L.divIcon({
                 className: "",
-                html: `<div style="
-                    background: ${selectedVenue?.name === venue.name ? "#a8001c" : "#c94b5b"};
-                    color: white;
-                    border-radius: 50%;
-                    width: 32px;
-                    height: 32px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 16px;
-                    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-                    border: 2px solid white;
-                ">${venue.icon}</div>`,
-                iconSize: [32, 32],
+                html: `<div style="background:${selectedVenue?.name === venue.name ? "#a8001c" : "#c94b5b"};color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 6px rgba(0,0,0,0.3);border:2px solid white;">${venue.icon}</div>`,
+                iconSize:   [32, 32],
                 iconAnchor: [16, 16],
             });
             marker.setIcon(icon);
@@ -110,13 +109,13 @@ function VenueMap({ venues, selectedVenue, onSelect }) {
     return (
         <div
             ref={mapRef}
-            style={{ height: "300px", borderRadius: "10px", overflow: "hidden", zIndex: 0 }}
+            className="venue-map"
         />
     );
 }
 
 function DatePlanner() {
-    const location = useLocation();
+    const location  = useLocation();
     const navigate  = useNavigate();
     const { currentUser, token } = useUser();
 
@@ -129,11 +128,11 @@ function DatePlanner() {
     const [error, setError] = useState("");
 
     const buildProposedDatetime = (slot) => {
-        const days = { friday: 5, saturday: 6, sunday: 0 };
+        const days   = { friday: 5, saturday: 6, sunday: 0 };
         const target = days[slot.day];
-        const now = new Date();
-        const diff = (target - now.getDay() + 7) % 7 || 7;
-        const date = new Date(now);
+        const now    = new Date();
+        const diff   = (target - now.getDay() + 7) % 7 || 7;
+        const date   = new Date(now);
         date.setDate(now.getDate() + diff);
         const [h, m] = slot.start.split(":");
         date.setHours(parseInt(h), parseInt(m), 0, 0);
@@ -150,17 +149,17 @@ function DatePlanner() {
         const proposed_datetime = buildProposedDatetime(selectedSlot);
 
         try {
-            const res = await fetch(`${API}/messages/date-request`, {
+            const res = await fetch(`${API}/dates/request`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${token}`,
                 },
                 body: JSON.stringify({
-                    match_id:           match?.match_id   || null,
-                    sender_id:          currentUser?.user_id || null,
-                    venue_type:         selectedVenue.venue_type,
-                    venue_name:         selectedVenue.suggestion,
+                    match_id:          match?.match_id    || null,
+                    sender_id:         currentUser?.user_id || null,
+                    venue_type:        selectedVenue.venue_type,
+                    venue_name:        selectedVenue.suggestion,
                     proposed_datetime,
                 }),
             });
@@ -172,7 +171,6 @@ function DatePlanner() {
             }
         } catch (err) {
             console.error("Date request failed:", err);
-            // Still show success for prototype if backend is unavailable
         }
 
         setSent(true);
@@ -184,9 +182,8 @@ function DatePlanner() {
             <Navbar />
 
             <div className="container d-flex justify-content-center faded-background min-vh-100 min-vw-100 pt-4">
-                <div className="login-card p-4 mb-4 text-start" style={{ width: "90%", maxWidth: "500px" }}>
+                <div className="login-card p-4 mb-4 text-start date-planner-card">
 
-                    {/* Header */}
                     <div className="text-center mb-4">
                         {match ? (
                             <>
@@ -204,7 +201,6 @@ function DatePlanner() {
                         <p className="text-muted small mt-1">Tap a pin to select a spot.</p>
                     </div>
 
-                    {/* Leaflet Map */}
                     <div className="mb-4">
                         <VenueMap
                             venues={VENUES}
@@ -213,27 +209,19 @@ function DatePlanner() {
                         />
                     </div>
 
-                    {/* Selected venue confirmation */}
                     {selectedVenue && (
-                        <div className="alert mb-3 py-2" style={{ background: "#fdf0f0", border: "1px solid #c94b5b", borderRadius: "10px" }}>
+                        <div className="venue-selected-banner mb-3">
                             <strong>{selectedVenue.icon} {selectedVenue.name}</strong> — {selectedVenue.suggestion}
                         </div>
                     )}
 
-                    {/* Venue list (also clickable) */}
                     <h5 className="section-title">Pick a Spot</h5>
                     <div className="d-flex flex-column gap-2 mb-4">
                         {VENUES.map((venue) => (
                             <div
                                 key={venue.name}
                                 onClick={() => setSelectedVenue(venue)}
-                                className="card p-3"
-                                style={{
-                                    cursor: "pointer",
-                                    border: selectedVenue?.name === venue.name ? "2px solid #a8001c" : "2px solid transparent",
-                                    background: selectedVenue?.name === venue.name ? "#fdf0f0" : "white",
-                                    transition: "all 0.15s",
-                                }}
+                                className={`card p-3 venue-card${selectedVenue?.name === venue.name ? " venue-card--selected" : ""}`}
                             >
                                 <div className="fw-bold">{venue.icon} {venue.name}</div>
                                 <div className="text-muted small">📍 {venue.suggestion}</div>
@@ -241,15 +229,13 @@ function DatePlanner() {
                         ))}
                     </div>
 
-                    {/* Time slots */}
                     <h5 className="section-title">Pick a Time</h5>
                     <div className="d-flex flex-column gap-2 mb-4">
                         {TIME_SLOTS.map((slot) => (
                             <div
                                 key={slot.label}
                                 onClick={() => setSelectedSlot(slot)}
-                                className="d-flex align-items-center gap-2"
-                                style={{ cursor: "pointer" }}
+                                className="d-flex align-items-center gap-2 time-slot-row"
                             >
                                 <input
                                     type="radio"

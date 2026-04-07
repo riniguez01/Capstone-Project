@@ -1,18 +1,22 @@
 require("dotenv").config();
 require("./config/db");
-const express = require("express");
-const cors    = require("cors");
-const app     = express();
-const PORT    = process.env.PORT || 4000;
 
+const express = require("express");
+const http    = require("http");
+const cors    = require("cors");
+
+const app    = express();
+const server = http.createServer(app);
+const PORT   = process.env.PORT || 4000;
+
+const initSocketServer = require("./realtime/socketServer");
+initSocketServer(server);
+
+app.use(cors());
 app.use(express.json());
-app.use(cors({
-    origin: "http://localhost:5173",
-    credentials: true
-}));
 
 app.use((req, res, next) => {
-    console.log(`${req.method} request to ${req.url}`);
+    console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
     next();
 });
 
@@ -20,14 +24,19 @@ const matchRoutes   = require("./routes/match");
 const authRoutes    = require("./routes/auth");
 const profileRoutes = require("./routes/profile");
 const messageRoutes = require("./routes/messages");
-const checkinRoutes = require("./routes/checkin");
+const dateRoutes    = require("./routes/dates");
 
 app.use("/matches",  matchRoutes);
 app.use("/auth",     authRoutes);
 app.use("/profile",  profileRoutes);
 app.use("/messages", messageRoutes);
-app.use("/checkin",  checkinRoutes);
+app.use("/dates",    dateRoutes);
 
-app.listen(PORT, () => {
-    console.log(`Backend server running on port ${PORT}`);
+app.get("/health", (req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+server.listen(PORT, () => {
+    console.log(`✅ Aura backend running on port ${PORT}`);
+    console.log(`✅ Socket.io initialized on the same port`);
 });

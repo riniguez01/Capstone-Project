@@ -1,8 +1,6 @@
 import Navbar from "../components/Navbar";
 import StarRating from "../components/StarRating";
 import { useUser } from "../context/UserContext";
-import beatrice from "../assets/beatrice.png";
-import {useState} from "react";
 
 function ToggleGroup({ options, value, onChange }) {
     return (
@@ -22,7 +20,7 @@ function ToggleGroup({ options, value, onChange }) {
 }
 
 function Profile() {
-    const { profile, setProfile, preferences, setPreferences } = useUser();
+    const { profile, setProfile, preferences, setPreferences, currentUser } = useUser();
     const updateProfile = (field, value) => setProfile((prev) => ({ ...prev, [field]: value }));
     const updatePref = (field, value) => setPreferences((prev) => ({ ...prev, [field]: value }));
 
@@ -34,28 +32,28 @@ function Profile() {
         return `${ft}'${inch}"`;
     };
 
-    // const [profilePic, setProfilePic] = useState(beatrice);
+    const getInitials = () => {
+        if (currentUser) {
+            const first = (currentUser.first_name || "").charAt(0).toUpperCase();
+            const last  = (currentUser.last_name  || "").charAt(0).toUpperCase();
+            return first + last;
+        }
+        return "U";
+    };
 
-    const profilePic = profile.profilePic || beatrice;
+    const fallbackAvatar = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300' viewBox='0 0 300 300'%3E%3Crect width='300' height='300' rx='150' fill='%23a8001c'/%3E%3Ccircle cx='150' cy='118' r='52' fill='%23f2d0d5'/%3E%3Cellipse cx='150' cy='245' rx='82' ry='62' fill='%23f2d0d5'/%3E%3Ctext x='150' y='130' text-anchor='middle' dominant-baseline='middle' fill='white' font-size='52' font-family='Arial,sans-serif' font-weight='700'%3E${getInitials()}%3C/text%3E%3C/svg%3E`;
+
+    const profilePic = profile.profilePic || fallbackAvatar;
 
     const handleImageChange = (e) => {
         const file = e.target.files[0];
         if (file) {
             const url = URL.createObjectURL(file);
-            //setProfilePic(url);
             updateProfile("profilePic", url);
         }
     };
 
     const handleSave = () => {
-        // BACKEND DISABLED
-        /*
-        fetch("/api/save-profile", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ profile, preferences })
-        });
-        */
         alert("Profile saved successfully!");
     };
 
@@ -65,23 +63,25 @@ function Profile() {
             <div className="container d-flex justify-content-center align-items-center text-center faded-background min-vh-100 min-vw-100">
                 <div className="login-card p-4 text-center mb-4">
 
-                    <div className="bg-white" style={{ position: "relative" }}>
+                    <div className="profile-photo-section">
                         <img
                             src={profilePic}
-                            className="rounded mb-3 mt-5"
+                            className="profile-photo mb-2 mt-3"
                             alt="profile"
-                            style={{ width: "70%", aspectRatio: "1/1", objectFit: "cover", cursor: "pointer" }}
                             onClick={() => document.getElementById("picUpload").click()}
                         />
                         <input
                             id="picUpload"
                             type="file"
                             accept="image/*"
-                            style={{ display: "none" }}
+                            className="d-none"
                             onChange={handleImageChange}
                         />
-                        <div className="text-muted small mb-2 bi-camera" style={{ cursor: "pointer" }} onClick={() => document.getElementById("picUpload").click()}>
-                            -Change Photo
+                        <div
+                            className="text-muted small mb-2 bi-camera profile-photo-label"
+                            onClick={() => document.getElementById("picUpload").click()}
+                        >
+                            Change Photo
                         </div>
                         <div className="pb-2">
                             <StarRating rating={starRating} />
@@ -318,7 +318,7 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Age Range: {preferences.minAge} – {preferences.maxAge}</label>
-                        <div style={{ position: "relative", height: "30px" }}>
+                        <div className="dual-range-wrap">
                             <input type="range" min="18" max="100" value={preferences.minAge}
                                    onChange={(e) => updatePref("minAge", Math.min(Number(e.target.value), preferences.maxAge - 1))}
                                    className="dual-range dual-range-min" />
@@ -330,7 +330,7 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Height Range: {inchesToDisplay(preferences.minHeight)} – {inchesToDisplay(preferences.maxHeight)}</label>
-                        <div style={{ position: "relative", height: "30px" }}>
+                        <div className="dual-range-wrap">
                             <input type="range" min="48" max="96" value={preferences.minHeight}
                                    onChange={(e) => updatePref("minHeight", Math.min(Number(e.target.value), preferences.maxHeight - 1))}
                                    className="dual-range dual-range-min" />
