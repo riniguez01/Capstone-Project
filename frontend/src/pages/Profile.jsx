@@ -1,7 +1,6 @@
 import Navbar from "../components/Navbar";
 import StarRating from "../components/StarRating";
 import { useUser } from "../context/UserContext";
-import beatrice from "../assets/beatrice.png";
 import { useState } from "react";
 
 const API = "http://localhost:4000";
@@ -10,8 +9,12 @@ function ToggleGroup({ options, value, onChange }) {
     return (
         <div className="d-flex flex-wrap gap-2 mt-1">
             {options.map((opt) => (
-                <button key={opt} type="button" onClick={() => onChange(opt)}
-                        className={`toggle-btn ${value === opt ? "toggle-btn-active" : ""}`}>
+                <button
+                    key={opt}
+                    type="button"
+                    onClick={() => onChange(opt)}
+                    className={`toggle-btn ${value === opt ? "toggle-btn-active" : ""}`}
+                >
                     {opt}
                 </button>
             ))}
@@ -20,13 +23,12 @@ function ToggleGroup({ options, value, onChange }) {
 }
 
 function Profile() {
-    const { profile, setProfile, preferences, setPreferences, token } = useUser();
+    const { profile, setProfile, preferences, setPreferences, currentUser, token } = useUser();
+    const [saveStatus, setSaveStatus] = useState(null);
+    const [saving, setSaving] = useState(false);
+
     const updateProfile = (field, value) => setProfile((prev) => ({ ...prev, [field]: value }));
     const updatePref    = (field, value) => setPreferences((prev) => ({ ...prev, [field]: value }));
-
-    const starRating = 3;
-    const [saving, setSaving]   = useState(false);
-    const [saveMsg, setSaveMsg] = useState("");
 
     const inchesToDisplay = (inches) => {
         const ft   = Math.floor(inches / 12);
@@ -34,79 +36,73 @@ function Profile() {
         return `${ft}'${inch}"`;
     };
 
-    const profilePic = profile.profilePic || beatrice;
+    const isValidPhotoUrl = (url) => url && (url.startsWith("http") || url.startsWith("data:"));
+    const profilePic = isValidPhotoUrl(profile.profilePic) ? profile.profilePic : null;
 
-    const handleImageChange = async (e) => {
+    const handleImageChange = (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        updateProfile("profilePic", URL.createObjectURL(file));
-        try {
-            const formData = new FormData();
-            formData.append("photo", file);
-            const res = await fetch(`${API}/profile/photo`, {
-                method: "POST",
-                headers: { Authorization: `Bearer ${token}` },
-                body: formData,
-            });
-            if (res.ok) {
-                const data = await res.json();
-                updateProfile("profilePic", `${API}${data.photo_url}`);
-            }
-        } catch (err) {
-            console.error("Photo upload error:", err);
-        }
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            updateProfile("profilePic", reader.result);
+        };
+        reader.readAsDataURL(file);
     };
 
     const handleSave = async () => {
+        if (!currentUser || !token) return;
         setSaving(true);
-        setSaveMsg("");
+        setSaveStatus(null);
+
         try {
             const profileRes = await fetch(`${API}/profile/save`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
                 body: JSON.stringify({
-                    name:              profile.name,
-                    location:          profile.location,
-                    bio:               profile.bio,
-                    height:            profile.height,
-                    gender:            profile.gender,
-                    religion:          profile.religion,
-                    ethnicity:         profile.ethnicity,
-                    education:         profile.education,
-                    familyOriented:    profile.familyOriented,
-                    smoker:            profile.smoker,
-                    drinker:           profile.drinker,
-                    coffeeDrinker:     profile.coffeeDrinker,
-                    diet:              profile.diet,
-                    activityLevel:     profile.activityLevel,
-                    musicPref:         profile.musicPref,
-                    gamer:             profile.gamer,
-                    reader:            profile.reader,
-                    travel:            profile.travel,
-                    pets:              profile.pets,
-                    personality:       profile.personality,
-                    datingGoal:        profile.datingGoal,
-                    astrology:         profile.astrology,
-                    children:          profile.children,
-                    politicalStanding: profile.politicalStanding,
-                })
+                    name, location, bio, height, gender, religion, ethnicity, education,
+                    familyOriented, smoker, drinker, coffeeDrinker, diet, activityLevel,
+                    musicPref, gamer, reader, travel, pets, personality, datingGoal,
+                    astrology, children, politicalStanding,
+                }),
             });
 
             const prefRes = await fetch(`${API}/profile/preferences`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-                body: JSON.stringify(preferences)
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ ...preferences }),
             });
 
-            setSaveMsg(profileRes.ok && prefRes.ok ? "✅ Profile saved!" : "Something went wrong. Please try again.");
+            if (profilePic && profilePic.startsWith("data:")) {
+                await fetch(`${API}/profile/photo`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ photo_url: profilePic }),
+                });
+            }
+
+            if (profileRes.ok && prefRes.ok) {
+                setSaveStatus("success");
+            } else {
+                const d1 = await profileRes.json().catch(() => ({}));
+                const d2 = await prefRes.json().catch(() => ({}));
+                console.error("Save error:", d1, d2);
+                setSaveStatus("error");
+            }
         } catch (err) {
-            console.error("Save error:", err);
-            setSaveMsg("Could not connect to server.");
+            console.error("Save failed:", err);
+            setSaveStatus("error");
         } finally {
             setSaving(false);
-            setTimeout(() => setSaveMsg(""), 3000);
+            setTimeout(() => setSaveStatus(null), 3000);
         }
     };
+
+    const { name, location, bio, height, gender, religion, ethnicity, education,
+        familyOriented, smoker, drinker, coffeeDrinker, diet, activityLevel,
+        musicPref, gamer, reader, travel, pets, personality, datingGoal,
+        astrology, children, politicalStanding } = profile;
+
+    const starRating = 3;
 
     return (
         <>
@@ -114,55 +110,63 @@ function Profile() {
             <div className="container d-flex justify-content-center align-items-center text-center faded-background min-vh-100 min-vw-100">
                 <div className="login-card p-4 text-center mb-4">
 
-                    <div className="profile-pic-wrapper">
-                        <img
-                            src={profilePic}
-                            className="profile-pic rounded mb-3 mt-5"
-                            alt="profile"
-                            onClick={() => document.getElementById("picUpload").click()}
+                    <div className="profile-photo-section">
+                        {profilePic ? (
+                            <img
+                                src={profilePic}
+                                className="rounded mb-3 mt-5 profile-photo-img"
+                                alt="profile"
+                                onClick={() => document.getElementById("picUpload").click()}
+                            />
+                        ) : (
+                            <div
+                                className="profile-photo-placeholder mb-3 mt-5"
+                                onClick={() => document.getElementById("picUpload").click()}
+                            >
+                                {profile.name ? profile.name.charAt(0).toUpperCase() : "?"}
+                            </div>
+                        )}
+                        <input
+                            id="picUpload"
+                            type="file"
+                            accept="image/*"
+                            className="d-none"
+                            onChange={handleImageChange}
                         />
-                        <input id="picUpload" type="file" accept="image/*"
-                               className="profile-pic-upload" onChange={handleImageChange} />
-                        <div className="profile-pic-label text-muted small mb-2"
-                             onClick={() => document.getElementById("picUpload").click()}>
-                            📷 Change Photo
+                        <div
+                            className="text-muted small mb-2 profile-change-photo"
+                            onClick={() => document.getElementById("picUpload").click()}
+                        >
+                            Change Photo
                         </div>
-                        <div className="pb-2"><StarRating rating={starRating} /></div>
+                        <div className="pb-2">
+                            <StarRating rating={starRating} />
+                        </div>
                     </div>
 
                     <h3 className="mt-3">My Profile</h3>
 
                     <div className="mb-3 text-start">
                         <label>Name</label>
-                        <input className="form-control" value={profile.name}
-                               onChange={(e) => updateProfile("name", e.target.value)} />
-                    </div>
-
-                    <div className="mb-3 text-start">
-                        <label>Date of Birth</label>
-                        <input className="form-control" value={profile.dob} disabled />
+                        <input className="form-control" value={profile.name} onChange={(e) => updateProfile("name", e.target.value)} />
                     </div>
 
                     <div className="mb-3 text-start">
                         <label>Location</label>
-                        <input className="form-control" value={profile.location}
-                               onChange={(e) => updateProfile("location", e.target.value)} />
+                        <input className="form-control" value={profile.location} onChange={(e) => updateProfile("location", e.target.value)} />
                     </div>
 
                     <div className="mb-4 text-start">
                         <label>Gender</label>
-                        <ToggleGroup options={["Male", "Female", "Non-binary"]} value={profile.gender}
-                                     onChange={(v) => updateProfile("gender", v)} />
+                        <ToggleGroup options={["Male", "Female", "Non-binary"]} value={profile.gender} onChange={(v) => updateProfile("gender", v)} />
                     </div>
 
                     <h5 className="section-title">Identity &amp; Background</h5>
 
                     <div className="mb-3 text-start">
                         <label>Religion</label>
-                        <select className="form-select" value={profile.religion}
-                                onChange={(e) => updateProfile("religion", e.target.value)}>
+                        <select className="form-select" value={profile.religion} onChange={(e) => updateProfile("religion", e.target.value)}>
                             <option value="">Select...</option>
-                            <option>No preference</option>
                             <option>Atheist</option><option>Agnostic</option><option>Buddhist</option>
                             <option>Catholic</option><option>Christian</option><option>Hindu</option>
                             <option>Jewish</option><option>Mormon</option><option>Muslim</option>
@@ -173,10 +177,8 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Ethnicity</label>
-                        <select className="form-select" value={profile.ethnicity}
-                                onChange={(e) => updateProfile("ethnicity", e.target.value)}>
+                        <select className="form-select" value={profile.ethnicity} onChange={(e) => updateProfile("ethnicity", e.target.value)}>
                             <option value="">Select...</option>
-                            <option>No preference</option>
                             <option>Asian</option><option>Black / African American</option>
                             <option>Hispanic / Latino</option><option>Middle Eastern</option>
                             <option>Native American</option><option>Pacific Islander</option>
@@ -187,68 +189,61 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Education</label>
-                        <select className="form-select" value={profile.education}
-                                onChange={(e) => updateProfile("education", e.target.value)}>
+                        <select className="form-select" value={profile.education} onChange={(e) => updateProfile("education", e.target.value)}>
                             <option value="">Select...</option>
-                            <option>No preference</option>
                             <option>High School</option><option>Some College</option>
                             <option>Associate's Degree</option><option>Bachelor's Degree</option>
                             <option>Master's Degree</option><option>Doctorate / PhD</option>
-                            <option>Trade / Vocational</option><option>Other</option>
+                            <option>Trade</option>
                         </select>
                     </div>
 
                     <div className="mb-3 text-start">
                         <label>Your Height: {inchesToDisplay(profile.height)}</label>
-                        <input type="range" min="48" max="96" value={profile.height}
-                               onChange={(e) => updateProfile("height", Number(e.target.value))}
-                               className="single-range mt-1" />
+                        <input
+                            type="range" min="48" max="96" value={profile.height}
+                            onChange={(e) => updateProfile("height", Number(e.target.value))}
+                            className="single-range mt-1"
+                        />
                     </div>
 
                     <div className="mb-4 text-start">
                         <label>Family-Oriented?</label>
-                        <ToggleGroup options={["No preference", "Yes", "No"]} value={profile.familyOriented}
-                                     onChange={(v) => updateProfile("familyOriented", v)} />
+                        <ToggleGroup options={["Yes", "No"]} value={profile.familyOriented} onChange={(v) => updateProfile("familyOriented", v)} />
                     </div>
 
                     <h5 className="section-title">Lifestyle &amp; Habits</h5>
 
                     <div className="mb-3 text-start">
                         <label>Do you smoke?</label>
-                        <ToggleGroup options={["Yes", "No", "Occasionally"]} value={profile.smoker}
-                                     onChange={(v) => updateProfile("smoker", v)} />
+                        <ToggleGroup options={["Yes", "No", "Occasionally"]} value={profile.smoker} onChange={(v) => updateProfile("smoker", v)} />
                     </div>
 
                     <div className="mb-3 text-start">
                         <label>Do you drink?</label>
-                        <ToggleGroup options={["Yes", "No", "Social"]} value={profile.drinker}
-                                     onChange={(v) => updateProfile("drinker", v)} />
+                        <ToggleGroup options={["Yes", "No", "Social"]} value={profile.drinker} onChange={(v) => updateProfile("drinker", v)} />
                     </div>
 
                     <div className="mb-3 text-start">
                         <label>Do you drink coffee?</label>
-                        <ToggleGroup options={["Yes", "No"]} value={profile.coffeeDrinker}
-                                     onChange={(v) => updateProfile("coffeeDrinker", v)} />
+                        <ToggleGroup options={["Yes", "No"]} value={profile.coffeeDrinker} onChange={(v) => updateProfile("coffeeDrinker", v)} />
                     </div>
 
                     <div className="mb-3 text-start">
                         <label>Diet</label>
-                        <ToggleGroup options={["Omnivore", "Vegetarian", "Vegan", "Other"]} value={profile.diet}
-                                     onChange={(v) => updateProfile("diet", v)} />
+                        <ToggleGroup options={["Omnivore", "Vegetarian", "Vegan", "Other"]} value={profile.diet} onChange={(v) => updateProfile("diet", v)} />
                     </div>
 
                     <div className="mb-4 text-start">
                         <label>Activity Level</label>
-                        <ToggleGroup options={["No preference", "Low", "Medium", "High"]} value={profile.activityLevel}
-                                     onChange={(v) => updateProfile("activityLevel", v)} />
+                        <ToggleGroup options={["Low", "Medium", "High"]} value={profile.activityLevel} onChange={(v) => updateProfile("activityLevel", v)} />
                     </div>
 
                     <h5 className="section-title">Interests &amp; Hobbies</h5>
 
                     <div className="mb-3 text-start">
                         <label>Music Preference</label>
-                        <select className="form-select" value={profile.musicPref}
-                                onChange={(e) => updateProfile("musicPref", e.target.value)}>
+                        <select className="form-select" value={profile.musicPref} onChange={(e) => updateProfile("musicPref", e.target.value)}>
                             <option value="">Select...</option>
                             <option>Pop</option><option>Hip-Hop / Rap</option><option>R&amp;B / Soul</option>
                             <option>Rock</option><option>Country</option><option>Electronic / EDM</option>
@@ -259,26 +254,22 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Are you a gamer?</label>
-                        <ToggleGroup options={["Yes", "No", "Casual"]} value={profile.gamer}
-                                     onChange={(v) => updateProfile("gamer", v)} />
+                        <ToggleGroup options={["Yes", "No", "Casual"]} value={profile.gamer} onChange={(v) => updateProfile("gamer", v)} />
                     </div>
 
                     <div className="mb-3 text-start">
                         <label>Are you a reader?</label>
-                        <ToggleGroup options={["Yes", "No", "Occasionally"]} value={profile.reader}
-                                     onChange={(v) => updateProfile("reader", v)} />
+                        <ToggleGroup options={["Yes", "No", "Occasionally"]} value={profile.reader} onChange={(v) => updateProfile("reader", v)} />
                     </div>
 
                     <div className="mb-3 text-start">
                         <label>Do you like to travel?</label>
-                        <ToggleGroup options={["Love it", "Occasionally", "Not really"]} value={profile.travel}
-                                     onChange={(v) => updateProfile("travel", v)} />
+                        <ToggleGroup options={["Love it", "Occasionally", "Not really"]} value={profile.travel} onChange={(v) => updateProfile("travel", v)} />
                     </div>
 
                     <div className="mb-4 text-start">
                         <label>Animals / Pets</label>
-                        <select className="form-select" value={profile.pets}
-                                onChange={(e) => updateProfile("pets", e.target.value)}>
+                        <select className="form-select" value={profile.pets} onChange={(e) => updateProfile("pets", e.target.value)}>
                             <option value="">Select...</option>
                             <option>Love animals</option><option>Have pets</option>
                             <option>Allergic</option><option>Not a fan</option><option>Neutral</option>
@@ -289,22 +280,18 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Personality Type</label>
-                        <ToggleGroup options={["Introvert", "Extrovert", "Ambivert"]} value={profile.personality}
-                                     onChange={(v) => updateProfile("personality", v)} />
+                        <ToggleGroup options={["Introvert", "Extrovert", "Ambivert"]} value={profile.personality} onChange={(v) => updateProfile("personality", v)} />
                     </div>
 
                     <div className="mb-3 text-start">
                         <label>Dating Goals</label>
-                        <ToggleGroup options={["No preference", "Casual", "Serious", "Long-term"]}
-                                     value={profile.datingGoal} onChange={(v) => updateProfile("datingGoal", v)} />
+                        <ToggleGroup options={["Casual", "Serious", "Long-term"]} value={profile.datingGoal} onChange={(v) => updateProfile("datingGoal", v)} />
                     </div>
 
                     <div className="mb-3 text-start">
                         <label>What's your political standing?</label>
-                        <select className="form-select" value={profile.politicalStanding}
-                                onChange={(e) => updateProfile("politicalStanding", e.target.value)}>
+                        <select className="form-select" value={profile.politicalStanding} onChange={(e) => updateProfile("politicalStanding", e.target.value)}>
                             <option value="">Select...</option>
-                            <option>No preference</option>
                             <option>Very Liberal</option><option>Liberal</option><option>Moderate</option>
                             <option>Conservative</option><option>Very Conservative</option>
                             <option>Apolitical</option><option>Prefer not to say</option>
@@ -313,22 +300,23 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Bio</label>
-                        <textarea className="form-control" rows={3}
-                                  placeholder="Tell us more about yourself..."
-                                  value={profile.bio} onChange={(e) => updateProfile("bio", e.target.value)} />
+                        <textarea
+                            className="form-control"
+                            rows={3}
+                            placeholder="Tell us more about yourself..."
+                            value={profile.bio}
+                            onChange={(e) => updateProfile("bio", e.target.value)}
+                        />
                     </div>
 
                     <div className="mb-3 text-start">
                         <label>Do you have or want children?</label>
-                        <ToggleGroup
-                            options={["No preference", "Want kids", "Have kids", "Don't want kids", "Open"]}
-                            value={profile.children} onChange={(v) => updateProfile("children", v)} />
+                        <ToggleGroup options={["Have kids", "Want kids", "Don't want kids", "Open"]} value={profile.children} onChange={(v) => updateProfile("children", v)} />
                     </div>
 
                     <div className="mb-4 text-start">
                         <label>Astrology Sign (optional)</label>
-                        <select className="form-select" value={profile.astrology}
-                                onChange={(e) => updateProfile("astrology", e.target.value)}>
+                        <select className="form-select" value={profile.astrology} onChange={(e) => updateProfile("astrology", e.target.value)}>
                             <option value="">Select...</option>
                             <option>Aries</option><option>Taurus</option><option>Gemini</option>
                             <option>Cancer</option><option>Leo</option><option>Virgo</option>
@@ -341,13 +329,12 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Gender Preference</label>
-                        <ToggleGroup options={["Male", "Female", "Non-binary", "No preference"]}
-                                     value={preferences.genderPref} onChange={(v) => updatePref("genderPref", v)} />
+                        <ToggleGroup options={["Male", "Female", "Non-binary", "No preference"]} value={preferences.genderPref} onChange={(v) => updatePref("genderPref", v)} />
                     </div>
 
                     <div className="mb-3 text-start">
                         <label>Age Range: {preferences.minAge} – {preferences.maxAge}</label>
-                        <div className="dual-range-container">
+                        <div className="dual-range-wrap">
                             <input type="range" min="18" max="100" value={preferences.minAge}
                                    onChange={(e) => updatePref("minAge", Math.min(Number(e.target.value), preferences.maxAge - 1))}
                                    className="dual-range dual-range-min" />
@@ -359,7 +346,7 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Height Range: {inchesToDisplay(preferences.minHeight)} – {inchesToDisplay(preferences.maxHeight)}</label>
-                        <div className="dual-range-container">
+                        <div className="dual-range-wrap">
                             <input type="range" min="48" max="96" value={preferences.minHeight}
                                    onChange={(e) => updatePref("minHeight", Math.min(Number(e.target.value), preferences.maxHeight - 1))}
                                    className="dual-range dual-range-min" />
@@ -371,8 +358,7 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Religion Preference</label>
-                        <select className="form-select" value={preferences.religionPref}
-                                onChange={(e) => updatePref("religionPref", e.target.value)}>
+                        <select className="form-select" value={preferences.religionPref} onChange={(e) => updatePref("religionPref", e.target.value)}>
                             <option value="">No preference</option>
                             <option>Atheist</option><option>Agnostic</option><option>Buddhist</option>
                             <option>Catholic</option><option>Christian</option><option>Hindu</option>
@@ -383,8 +369,7 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Ethnicity Preference</label>
-                        <select className="form-select" value={preferences.ethnicityPref}
-                                onChange={(e) => updatePref("ethnicityPref", e.target.value)}>
+                        <select className="form-select" value={preferences.ethnicityPref} onChange={(e) => updatePref("ethnicityPref", e.target.value)}>
                             <option value="">No preference</option>
                             <option>Asian</option><option>Black / African American</option>
                             <option>Hispanic / Latino</option><option>Middle Eastern</option>
@@ -395,8 +380,7 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Political Preference</label>
-                        <select className="form-select" value={preferences.politicalPref}
-                                onChange={(e) => updatePref("politicalPref", e.target.value)}>
+                        <select className="form-select" value={preferences.politicalPref} onChange={(e) => updatePref("politicalPref", e.target.value)}>
                             <option value="">No preference</option>
                             <option>Very Liberal</option><option>Liberal</option><option>Moderate</option>
                             <option>Conservative</option><option>Very Conservative</option><option>Apolitical</option>
@@ -405,30 +389,29 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Children Preference</label>
-                        <ToggleGroup
-                            options={["No preference", "Want kids", "Have kids", "Don't want kids", "Open"]}
-                            value={preferences.childrenPref} onChange={(v) => updatePref("childrenPref", v)} />
+                        <ToggleGroup options={["Have kids", "Want kids", "Don't want kids", "Open"]} value={preferences.childrenPref} onChange={(v) => updatePref("childrenPref", v)} />
                     </div>
 
                     <div className="mb-3 text-start">
                         <label>Activity Level Preference</label>
-                        <ToggleGroup options={["No preference", "Low", "Medium", "High"]}
-                                     value={preferences.activityPref} onChange={(v) => updatePref("activityPref", v)} />
+                        <ToggleGroup options={["Low", "Medium", "High", "No preference"]} value={preferences.activityPref} onChange={(v) => updatePref("activityPref", v)} />
                     </div>
 
                     <div className="mb-4 text-start">
                         <label>Dating Goals Preference</label>
-                        <ToggleGroup options={["No preference", "Casual", "Serious", "Long-term"]}
-                                     value={preferences.datingGoalPref} onChange={(v) => updatePref("datingGoalPref", v)} />
+                        <ToggleGroup options={["Casual", "Serious", "Long-term"]} value={preferences.datingGoalPref} onChange={(v) => updatePref("datingGoalPref", v)} />
                     </div>
 
-                    {saveMsg && (
-                        <div className={`alert py-2 text-center mb-3 ${saveMsg.startsWith("✅") ? "alert-success" : "alert-danger"}`}>
-                            {saveMsg}
-                        </div>
+                    {saveStatus === "success" && (
+                        <div className="alert alert-success py-2 mb-3">Profile saved successfully!</div>
+                    )}
+                    {saveStatus === "error" && (
+                        <div className="alert alert-danger py-2 mb-3">Failed to save. Please try again.</div>
                     )}
 
-                    <div><button className="btn btn-danger me-2 mb-2">Get Aura +</button></div>
+                    <div>
+                        <button className="btn btn-danger me-2 mb-2">Get Aura +</button>
+                    </div>
                     <div>
                         <button className="btn btn-outline-danger me-2" onClick={handleSave} disabled={saving}>
                             {saving ? "Saving..." : "Save"}

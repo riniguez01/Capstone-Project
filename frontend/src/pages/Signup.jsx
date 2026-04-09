@@ -62,6 +62,7 @@ function Signup() {
                 return;
             }
 
+            // Store token + user in context and localStorage
             login(data.user, data.token);
             navigate("/questionnaire");
 

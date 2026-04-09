@@ -6,8 +6,9 @@ import ChatWindow from "../components/ChatWindow";
 import { useUser } from "../context/UserContext";
 
 function Chat() {
-    const { matchedUsers } = useUser();
+    const { mutualMatches } = useUser();
     const location = useLocation();
+
     const [selectedMatch, setSelectedMatch] = useState(
         location.state?.selectedMatch || null
     );
@@ -16,7 +17,7 @@ function Chat() {
         <>
             <Navbar />
             <div className="container d-flex justify-content-center align-items-start faded-background min-vh-100 min-vw-100 pt-4">
-                <div className="login-card p-4 mb-4" style={{ width: "90%", maxWidth: "500px" }}>
+                <div className="login-card p-4 mb-4 chat-page-card">
                     {selectedMatch ? (
                         <ChatWindow
                             match={selectedMatch}
@@ -24,7 +25,7 @@ function Chat() {
                         />
                     ) : (
                         <ChatList
-                            matches={matchedUsers}
+                            matches={mutualMatches}
                             onSelect={(match) => setSelectedMatch(match)}
                         />
                     )}
@@ -35,3 +36,4 @@ function Chat() {
 }
 
 export default Chat;
+

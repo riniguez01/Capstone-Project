@@ -8,7 +8,8 @@ const rankMatches   = require("../matching/rankMatches");
 const scoreMatch    = require("../matching/scoreMatch");
 const pool          = require("../config/db");
 
-// Attach preferences to each candidate for mutual gender check in filterMatches
+// ─── Attach preferences to each candidate ──────────────────────────────────
+// Required so filterMatches can check mutual gender compatibility
 async function attachCandidatePreferences(candidates) {
     return Promise.all(candidates.map(async (candidate) => {
         const result = await pool.query(
@@ -36,26 +37,32 @@ async function attachCandidatePreferences(candidates) {
     }));
 }
 
+// ─── MAIN PIPELINE ─────────────────────────────────────────────────────────
+// user:       full user object from getUserById (includes preferences)
+// candidates: array from getCandidates
+// shouldRank: true = score + rank | false = score only (flat list)
 module.exports = async function generateMatches(user, candidates, shouldRank = true) {
-    // Attach each candidate's preferences for mutual filtering
+
+    // Attach each candidate's own preferences for mutual filtering
     const candidatesWithPrefs = await attachCandidatePreferences(candidates);
 
-    // Stage 1: Hard constraint filtering
+    // Stage 1 — Hard constraint filtering
     const filtered = filterMatches(user, candidatesWithPrefs);
 
-    // Stage 2 & 3: Score and optionally rank
+    // Stage 2 — Score only (no ranking)
     if (!shouldRank) {
         return filtered.map(candidate => {
             const result = scoreMatch(user, candidate);
             return {
-                user_id: candidate.user_id,
-                score: Math.round(result.totalScore),
-                raw_score: Math.round(result.totalScore),
+                user_id:         candidate.user_id,
+                score:           Math.round(result.totalScore),
+                raw_score:       Math.round(result.totalScore),
                 trust_penalized: false,
-                breakdown: result.breakdown
+                breakdown:       result.breakdown
             };
         });
     }
 
+    // Stage 2 + 3 — Score and rank
     return rankMatches(user, filtered);
 };
