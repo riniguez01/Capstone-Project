@@ -5,7 +5,7 @@ import ChatList from "../components/ChatList";
 import ChatWindow from "../components/ChatWindow";
 import { useUser } from "../context/UserContext";
 
-const API = "https://aura-dating.us";
+const API = "https://backend.aura-dating.us";
 
 function Chat() {
     const { currentUser, token } = useUser();

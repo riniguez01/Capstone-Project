@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useUser } from "../context/UserContext";
 
-const API = "https://aura-dating.us";
+const API = "https://backend.aura-dating.us";
 
 function Navbar() {
     const { currentUser, token } = useUser();

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "../context/UserContext";
 
-const API = "https://aura-dating.us";
+const API = "https://backend.aura-dating.us";
 
 function Pill({ label }) {
     if (!label) return null;

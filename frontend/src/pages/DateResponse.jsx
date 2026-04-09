@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { useUser } from "../context/UserContext";
 
-const API = "https://aura-dating.us";
+const API = "https://backend.aura-dating.us";
 
 function DateResponse() {
     const location  = useLocation();

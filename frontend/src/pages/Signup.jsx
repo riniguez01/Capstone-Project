@@ -49,7 +49,7 @@ function Signup() {
         setLoading(true);
 
         try {
-            const res = await fetch("https://aura-dating.us/auth/signup", {
+            const res = await fetch("https://backend.aura-dating.us/auth/signup", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ firstName, lastName, location, age, email, password }),
