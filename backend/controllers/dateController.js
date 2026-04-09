@@ -8,6 +8,23 @@ exports.sendDateRequest = async (req, res) => {
     }
 
     try {
+        const weeklyCount = await pool.query(
+            `SELECT COUNT(*) AS count FROM notifications
+             WHERE type = 'date_request'
+               AND (payload->>'sender_id')::int = $1
+               AND created_at >= date_trunc('week', NOW())`,
+            [parseInt(sender_id)]
+        );
+
+        const sentThisWeek = parseInt(weeklyCount.rows[0].count);
+        if (sentThisWeek >= 3) {
+            return res.status(429).json({
+                error: "You have reached your weekly date request limit of 3. Resets every Monday.",
+                requests_used: sentThisWeek,
+                resets_on: "Monday",
+            });
+        }
+
         const matchResult = await pool.query(
             `SELECT user1_id, user2_id FROM matches WHERE match_id = $1 AND match_status = 'active'`,
             [match_id]
@@ -18,6 +35,15 @@ exports.sendDateRequest = async (req, res) => {
 
         const { user1_id, user2_id } = matchResult.rows[0];
         const recipient_id = parseInt(sender_id) === user1_id ? user2_id : user1_id;
+
+        const senderResult = await pool.query(
+            `SELECT first_name, last_name FROM users WHERE user_id = $1`,
+            [parseInt(sender_id)]
+        );
+
+        const senderName = senderResult.rows.length > 0
+            ? `${senderResult.rows[0].first_name || ""} ${senderResult.rows[0].last_name || ""}`.trim()
+            : "Unknown";
 
         const scheduleResult = await pool.query(
             `INSERT INTO date_scheduling (match_id, proposed_datetime, venue_type, venue_name, status, created_at)
@@ -36,10 +62,21 @@ exports.sendDateRequest = async (req, res) => {
         await pool.query(
             `INSERT INTO notifications (user_id, type, payload, is_read, created_at)
              VALUES ($1, 'date_request', $2, false, NOW())`,
-            [recipient_id, JSON.stringify({ schedule_id, sender_id, venue_name, proposed_datetime, match_id })]
+            [recipient_id, JSON.stringify({
+                schedule_id,
+                sender_id:   parseInt(sender_id),
+                sender_name: senderName,
+                venue_name,
+                proposed_datetime,
+                match_id,
+            })]
         );
 
-        res.status(201).json({ message: "Date request sent.", schedule_id });
+        res.status(201).json({
+            message:       "Date request sent.",
+            schedule_id,
+            requests_left: 3 - (sentThisWeek + 1),
+        });
     } catch (err) {
         console.error("sendDateRequest error:", err.message);
         res.status(500).json({ error: "Failed to send date request." });
@@ -69,23 +106,36 @@ exports.respondToDate = async (req, res) => {
 
         await pool.query(
             `UPDATE notifications SET is_read = true
-             WHERE payload->>'schedule_id' = $1`,
-            [scheduleId.toString()]
+             WHERE type = 'date_request'
+               AND (payload->>'schedule_id')::int = $1`,
+            [parseInt(scheduleId)]
         );
 
+        const matchResult = await pool.query(
+            `SELECT user1_id, user2_id FROM matches WHERE match_id = $1`,
+            [match_id]
+        );
+        const { user1_id, user2_id } = matchResult.rows[0];
+        const other_user_id = parseInt(user_id) === user1_id ? user2_id : user1_id;
+
+        const responderResult = await pool.query(
+            `SELECT first_name, last_name FROM users WHERE user_id = $1`,
+            [parseInt(user_id)]
+        );
+        const responderName = responderResult.rows.length > 0
+            ? `${responderResult.rows[0].first_name || ""} ${responderResult.rows[0].last_name || ""}`.trim()
+            : "Your match";
+
         if (response === "approved") {
-            const matchResult = await pool.query(
-                `SELECT user1_id, user2_id FROM matches WHERE match_id = $1`,
-                [match_id]
-            );
-            const { user1_id, user2_id } = matchResult.rows[0];
-
-            const notifyUserId = parseInt(user_id) === user1_id ? user2_id : user1_id;
-
             await pool.query(
                 `INSERT INTO notifications (user_id, type, payload, is_read, created_at)
                  VALUES ($1, 'date_accepted', $2, false, NOW())`,
-                [notifyUserId, JSON.stringify({ schedule_id: scheduleId, venue_name, proposed_datetime })]
+                [other_user_id, JSON.stringify({
+                    schedule_id:    parseInt(scheduleId),
+                    venue_name,
+                    proposed_datetime,
+                    responder_name: responderName,
+                })]
             );
 
             await pool.query(
@@ -93,6 +143,17 @@ exports.respondToDate = async (req, res) => {
                  VALUES ($1, $2, $3, $4::timestamptz, false, NOW())
                  ON CONFLICT (schedule_id) DO NOTHING`,
                 [scheduleId, user1_id, user2_id, proposed_datetime]
+            );
+        } else {
+            await pool.query(
+                `INSERT INTO notifications (user_id, type, payload, is_read, created_at)
+                 VALUES ($1, 'date_declined', $2, false, NOW())`,
+                [other_user_id, JSON.stringify({
+                    schedule_id:    parseInt(scheduleId),
+                    venue_name,
+                    proposed_datetime,
+                    responder_name: responderName,
+                })]
             );
         }
 

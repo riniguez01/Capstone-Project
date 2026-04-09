@@ -1,57 +1,162 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { useUser } from "../context/UserContext";
 
 const API = "http://localhost:4000";
 
 function Navbar() {
-    const [open, setOpen]           = useState(false);
-    const [hasUnread, setHasUnread] = useState(false);
-    const { currentUser, token, logout } = useUser();
-    const navigate = useNavigate();
-    const toggle   = () => setOpen(!open);
+    const { currentUser, token } = useUser();
+    const [menuOpen,  setMenuOpen]  = useState(false);
+    const [notifOpen, setNotifOpen] = useState(false);
+    const [notifications, setNotifications] = useState([]);
+    const [unread, setUnread] = useState(0);
 
-    useEffect(() => {
+    const fetchNotifications = () => {
         if (!currentUser || !token) return;
         fetch(`${API}/dates/notifications/${currentUser.user_id}`, {
             headers: { Authorization: `Bearer ${token}` },
         })
             .then(r => r.json())
             .then(data => {
-                const unread = (data.notifications || []).some(n => !n.is_read);
-                setHasUnread(unread);
+                if (data.notifications) {
+                    setNotifications(data.notifications);
+                    setUnread(data.notifications.filter(n => !n.is_read).length);
+                }
             })
             .catch(() => {});
+    };
+
+    useEffect(() => {
+        fetchNotifications();
+        const interval = setInterval(fetchNotifications, 60000);
+        return () => clearInterval(interval);
     }, [currentUser, token]);
 
-    const handleLogout = () => {
-        logout();
-        navigate("/");
+    const handleRespond = async (scheduleId, response) => {
+        try {
+            await fetch(`${API}/dates/${scheduleId}/respond`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ response, user_id: currentUser.user_id }),
+            });
+            fetchNotifications();
+        } catch (err) {
+            console.error("Respond error:", err);
+        }
+    };
+
+    const formatDate = (iso) => {
+        if (!iso) return "";
+        return new Date(iso).toLocaleString([], {
+            month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+        });
+    };
+
+    const formatNotif = (n) => {
+        const p = n.payload || {};
+        if (n.type === "date_request") {
+            return {
+                icon:        "📅",
+                title:       `${p.sender_name || "Someone"} sent a date request`,
+                body:        `${p.venue_name || "Venue"} · ${formatDate(p.proposed_datetime)}`,
+                showActions: true,
+                scheduleId:  p.schedule_id,
+            };
+        }
+        if (n.type === "date_accepted") {
+            return {
+                icon:        "✅",
+                title:       `${p.responder_name || "Your match"} accepted your date!`,
+                body:        `${p.venue_name || "Your date"} on ${formatDate(p.proposed_datetime)} is confirmed.`,
+                showActions: false,
+            };
+        }
+        if (n.type === "date_declined") {
+            return {
+                icon:        "❌",
+                title:       `${p.responder_name || "Your match"} declined your date request.`,
+                body:        p.venue_name ? `Venue: ${p.venue_name}` : "",
+                showActions: false,
+            };
+        }
+        if (n.type === "post_date_survey") {
+            return {
+                icon:        "⭐",
+                title:       "Rate Your Date",
+                body:        `How did your date at ${p.venue_name || "the venue"} go?`,
+                showActions: false,
+            };
+        }
+        return { icon: "🔔", title: n.type, body: "", showActions: false };
     };
 
     return (
         <>
             <nav className="navbar navbar-dark navbar-color px-4">
-                <span className="navbar-brand navbar-toggle" onClick={toggle}>☰</span>
+                <span className="navbar-brand navbar-toggle" onClick={() => setMenuOpen(!menuOpen)}>☰</span>
                 <div className="d-flex gap-3 text-white align-items-center">
-                    <span className="navbar-icon" onClick={() => navigate("/notifications")}>
+                    <div className="notif-bell-wrap" onClick={() => { setNotifOpen(!notifOpen); fetchNotifications(); }}>
                         <i className="bi bi-bell"></i>
-                        {hasUnread && <span className="navbar-notification-dot" />}
-                    </span>
+                        {unread > 0 && (
+                            <span className="notif-badge">{unread}</span>
+                        )}
+                    </div>
                     <i className="bi bi-share"></i>
                     <i className="bi bi-search"></i>
                 </div>
             </nav>
 
-            <div className={`sidebar ${open ? "open" : ""}`}>
-                <button className="close-btn" onClick={toggle}>×</button>
+            {notifOpen && (
+                <div className="notif-panel">
+                    <h5 className="section-title">🔔 Notifications</h5>
+                    {notifications.length === 0 && (
+                        <p className="text-muted small text-center mt-3">No notifications yet.</p>
+                    )}
+                    {notifications.map((n) => {
+                        const f = formatNotif(n);
+                        return (
+                            <div key={n.notification_id} className={`notif-item${n.is_read ? " notif-item--read" : ""}`}>
+                                <div className="notif-item__icon">{f.icon}</div>
+                                <div className="notif-item__body">
+                                    <div className="notif-item__title">{f.title}</div>
+                                    <div className="notif-item__text">{f.body}</div>
+                                    <div className="notif-item__time">{formatDate(n.created_at)}</div>
+                                    {f.showActions && !n.is_read && (
+                                        <div className="d-flex gap-2 mt-2">
+                                            <button
+                                                className="btn btn-sm btn-danger"
+                                                onClick={() => handleRespond(f.scheduleId, "approved")}
+                                            >
+                                                Accept
+                                            </button>
+                                            <button
+                                                className="btn btn-sm btn-outline-danger"
+                                                onClick={() => handleRespond(f.scheduleId, "rejected")}
+                                            >
+                                                Decline
+                                            </button>
+                                        </div>
+                                    )}
+                                    {f.showActions && n.is_read && (
+                                        <div className="notif-item__responded">Responded</div>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            <div className={`sidebar ${menuOpen ? "open" : ""}`}>
+                <button className="close-btn" onClick={() => setMenuOpen(false)}>×</button>
                 <ul className="list-unstyled mt-4">
                     <li><a href="/profile">Profile</a></li>
                     <li><a href="/matching">Matching</a></li>
                     <li><a href="/dates">Date Planner</a></li>
                     <li><a href="/chat">Messages</a></li>
-                    <li><a href="/notifications">Notifications</a></li>
-                    <li><button className="btn btn-link text-white p-0" onClick={handleLogout}>Logout</button></li>
+                    <li><a href="/">Logout</a></li>
                 </ul>
             </div>
         </>

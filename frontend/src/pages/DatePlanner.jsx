@@ -2,24 +2,15 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { useUser } from "../context/UserContext";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
-
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-    iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-    iconUrl:       "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-    shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
 
 const API = "http://localhost:4000";
 
 const VENUES = [
-    { icon: "🍽️", name: "Restaurant",     suggestion: "Piccolo Sogno",         venue_type: "public",      lat: 41.8851, lng: -87.6445 },
-    { icon: "🎬", name: "Movie Theater",   suggestion: "AMC River East",        venue_type: "public",      lat: 41.8918, lng: -87.6196 },
-    { icon: "☕", name: "Coffee Shop",     suggestion: "Intelligentsia Coffee", venue_type: "public",      lat: 41.9003, lng: -87.6779 },
-    { icon: "🎳", name: "Bowling",         suggestion: "Pinstripes",            venue_type: "semi-public", lat: 41.8960, lng: -87.6270 },
-    { icon: "🌳", name: "Park / Outdoors", suggestion: "Millennium Park",       venue_type: "public",      lat: 41.8827, lng: -87.6233 },
+    { icon: "🍽️", name: "Restaurant",    suggestion: "Piccolo Sogno",         venue_type: "public",      lat: 41.8851, lng: -87.6445 },
+    { icon: "🎬", name: "Movie Theater",  suggestion: "AMC River East",         venue_type: "public",      lat: 41.8918, lng: -87.6196 },
+    { icon: "☕", name: "Coffee Shop",    suggestion: "Intelligentsia Coffee",  venue_type: "public",      lat: 41.9003, lng: -87.6779 },
+    { icon: "🎳", name: "Bowling",        suggestion: "Pinstripes",             venue_type: "semi-public", lat: 41.8960, lng: -87.6270 },
+    { icon: "🌳", name: "Park / Outdoors",suggestion: "Millennium Park",        venue_type: "public",      lat: 41.8827, lng: -87.6233 },
 ];
 
 const TIME_SLOTS = [
@@ -37,37 +28,40 @@ function VenueMap({ venues, selectedVenue, onSelect }) {
 
     useEffect(() => {
         if (mapObjRef.current) return;
-        if (!mapRef.current) return;
 
-        const map = L.map(mapRef.current).setView([41.8827, -87.6233], 13);
-        mapObjRef.current = map;
+        const init = () => {
+            if (!window.L || !mapRef.current) return false;
 
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: "© OpenStreetMap contributors",
-        }).addTo(map);
+            const map = window.L.map(mapRef.current).setView([41.8827, -87.6233], 13);
+            mapObjRef.current = map;
 
-        venues.forEach((venue) => {
-            const marker = L.marker([venue.lat, venue.lng])
-                .addTo(map)
-                .bindPopup(`<b>${venue.icon} ${venue.name}</b><br/>${venue.suggestion}`);
-            marker.on("click", () => onSelect(venue));
-            markersRef.current.push({ marker, venue });
-        });
+            window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                attribution: "© OpenStreetMap contributors",
+            }).addTo(map);
 
-        return () => {
-            map.remove();
-            mapObjRef.current = null;
-            markersRef.current = [];
+            venues.forEach((venue) => {
+                const marker = window.L.marker([venue.lat, venue.lng])
+                    .addTo(map)
+                    .bindPopup(`<b>${venue.icon} ${venue.name}</b><br/>${venue.suggestion}`);
+                marker.on("click", () => onSelect(venue));
+                markersRef.current.push({ marker, venue });
+            });
+            return true;
         };
+
+        if (!init()) {
+            const interval = setInterval(() => { if (init()) clearInterval(interval); }, 100);
+            return () => clearInterval(interval);
+        }
     }, []);
 
     useEffect(() => {
-        if (!mapObjRef.current) return;
+        if (!window.L || !mapObjRef.current) return;
         markersRef.current.forEach(({ marker, venue }) => {
-            const icon = L.divIcon({
+            const icon = window.L.divIcon({
                 className: "",
-                html: `<div class="venue-map-pin${selectedVenue?.name === venue.name ? " venue-map-pin-selected" : ""}">${venue.icon}</div>`,
-                iconSize: [32, 32],
+                html: `<div style="background:${selectedVenue?.name === venue.name ? "#a8001c" : "#c94b5b"};color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 6px rgba(0,0,0,0.3);border:2px solid white;">${venue.icon}</div>`,
+                iconSize:   [32, 32],
                 iconAnchor: [16, 16],
             });
             marker.setIcon(icon);
@@ -78,8 +72,8 @@ function VenueMap({ venues, selectedVenue, onSelect }) {
 }
 
 function DatePlanner() {
-    const location = useLocation();
-    const navigate = useNavigate();
+    const location  = useLocation();
+    const navigate  = useNavigate();
     const { currentUser, token } = useUser();
 
     const match    = location.state?.match    || null;
@@ -87,8 +81,8 @@ function DatePlanner() {
 
     const [selectedVenue, setSelectedVenue] = useState(null);
     const [selectedSlot,  setSelectedSlot]  = useState(null);
-    const [sent,          setSent]          = useState(false);
-    const [error,         setError]         = useState("");
+    const [sent,  setSent]  = useState(false);
+    const [error, setError] = useState("");
 
     const buildProposedDatetime = (slot) => {
         const days   = { friday: 5, saturday: 6, sunday: 0 };
@@ -119,16 +113,17 @@ function DatePlanner() {
                     Authorization: `Bearer ${token}`,
                 },
                 body: JSON.stringify({
-                    match_id:          match?.match_id     || null,
-                    sender_id:         currentUser?.user_id || null,
+                    match_id:          match?.match_id       || null,
+                    sender_id:         currentUser?.user_id  || null,
                     venue_type:        selectedVenue.venue_type,
                     venue_name:        selectedVenue.suggestion,
                     proposed_datetime,
                 }),
             });
 
+            const data = await res.json();
+
             if (!res.ok) {
-                const data = await res.json();
                 setError(data.error || "Failed to send date request.");
                 return;
             }
@@ -152,7 +147,7 @@ function DatePlanner() {
                                 <img
                                     src={match.image}
                                     alt={match.name}
-                                    className="rounded-circle mb-2 date-planner-avatar"
+                                    className="date-planner-match-avatar rounded-circle mb-2"
                                 />
                                 <h4 className="mb-0">Plan a date with {match.name}</h4>
                             </>
@@ -163,15 +158,11 @@ function DatePlanner() {
                     </div>
 
                     <div className="mb-4">
-                        <VenueMap
-                            venues={VENUES}
-                            selectedVenue={selectedVenue}
-                            onSelect={setSelectedVenue}
-                        />
+                        <VenueMap venues={VENUES} selectedVenue={selectedVenue} onSelect={setSelectedVenue} />
                     </div>
 
                     {selectedVenue && (
-                        <div className="date-selected-venue-alert mb-3 py-2">
+                        <div className="venue-selected-banner mb-3">
                             <strong>{selectedVenue.icon} {selectedVenue.name}</strong> — {selectedVenue.suggestion}
                         </div>
                     )}
@@ -182,7 +173,7 @@ function DatePlanner() {
                             <div
                                 key={venue.name}
                                 onClick={() => setSelectedVenue(venue)}
-                                className={`card p-3 date-venue-card${selectedVenue?.name === venue.name ? " date-venue-card-selected" : ""}`}
+                                className={`card p-3 venue-card${selectedVenue?.name === venue.name ? " venue-card--selected" : ""}`}
                             >
                                 <div className="fw-bold">{venue.icon} {venue.name}</div>
                                 <div className="text-muted small">📍 {venue.suggestion}</div>
@@ -196,15 +187,15 @@ function DatePlanner() {
                             <div
                                 key={slot.label}
                                 onClick={() => setSelectedSlot(slot)}
-                                className="date-time-row"
+                                className="d-flex align-items-center gap-2 time-slot-row"
                             >
                                 <input
                                     type="radio"
                                     readOnly
                                     checked={selectedSlot?.label === slot.label}
-                                    className="form-check-input mt-0 date-radio"
+                                    className="form-check-input mt-0 time-slot-radio"
                                 />
-                                <label className="date-time-label">{slot.label}</label>
+                                <label className="time-slot-label">{slot.label}</label>
                             </div>
                         ))}
                     </div>

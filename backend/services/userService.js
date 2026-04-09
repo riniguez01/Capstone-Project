@@ -34,7 +34,25 @@ async function getUserById(userId) {
             dg.dating_goal_name       AS dating_goals_name,
             wc.want_children          AS children_name,
             pa.political_affil        AS political_name,
-            ec.education_career_name
+            ec.education_career_name,
+            u.religion_id,
+            u.activity_level,
+            u.music,
+            u.personality_type,
+            u.dating_goals,
+            u.children,
+            u.political,
+            u.drinking_id,
+            u.smoking_id,
+            u.coffee_id,
+            u.diet_id,
+            u.gamer,
+            u.reader,
+            u.travel,
+            u.pet_interest,
+            u.family_oriented,
+            u.ethnicity_id,
+            u.education_career_id
         FROM users u
         LEFT JOIN gender_type      gt ON gt.gender_type_id       = u.gender_identity
         LEFT JOIN trust_score      ts ON ts.user_id              = u.user_id

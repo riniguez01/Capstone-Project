@@ -44,8 +44,11 @@ function canTransitionTo(requiredState, conv) {
 
     // Entry conditions per target state
     if (requiredState === STATE.FLIRTING) {
-        // S0 → S1: both users must have initiated at least once
-        return conv.initiators.size >= 2 &&
+        // S0 → S1: both users must have sent at least 2 messages each and exchanged at least 2 alternating replies
+        const bothSentEnough = conv.initiators.size >= 2 &&
+            Object.values(conv.messageCounts).every(c => c >= 2);
+        return bothSentEnough &&
+            conv.alternatingCount >= 2 &&
             conv.resistanceWindow.filter(Boolean).length === 0;
     }
 
@@ -220,22 +223,10 @@ function _updateCounters(conv, senderId, recipientId, category, willDeliver) {
     // Update consent score
     conv.consentScore = updateConsentScore(conv, isAlternating);
 
-    // Try advancing state naturally (organic progression for normal messages)
-    if (category === 'normal' || category === 'flirty') {
-        _tryNaturalStateAdvance(conv);
-    }
+    // State advances only through explicit flirty message transitions, not automatically
 
     // Update last sender
     conv.lastSenderId = senderId;
-}
-
-// ─── Attempt natural state progression ────────────────────────────────────
-function _tryNaturalStateAdvance(conv) {
-    if (conv.state === STATE.INTRODUCTORY &&
-        conv.initiators.size >= 2 &&
-        conv.resistanceWindow.filter(Boolean).length === 0) {
-        conv.state = STATE.FLIRTING;
-    }
 }
 
 // ─── Human-readable block reasons ─────────────────────────────────────────
