@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { useUser } from "../context/UserContext";
 
-const API = "http://3.16.24.97:4000";
+const API = "https://aura-dating.us";
 
 const VENUES = [
     {

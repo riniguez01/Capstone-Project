@@ -20,7 +20,7 @@ function Login() {
         setLoading(true);
 
         try {
-            const res = await fetch("http://3.16.24.97:4000/auth/login", {
+            const res = await fetch("https://aura-dating.us/auth/login", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, password }),

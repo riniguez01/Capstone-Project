@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import { useUser } from "../context/UserContext";
 
-const API = "http://3.16.24.97:4000";
+const API = "https://aura-dating.us";
 
 function ChatWindow({ match, onBack }) {
     const navigate = useNavigate();
