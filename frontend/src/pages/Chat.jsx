@@ -5,7 +5,7 @@ import ChatList from "../components/ChatList";
 import ChatWindow from "../components/ChatWindow";
 import { useUser } from "../context/UserContext";
 
-const API = "http://localhost:4000";
+const API = "http://3.16.24.97:4000";
 
 function Chat() {
     const { currentUser, token } = useUser();

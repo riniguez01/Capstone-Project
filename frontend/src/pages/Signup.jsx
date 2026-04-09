@@ -49,7 +49,7 @@ function Signup() {
         setLoading(true);
 
         try {
-            const res = await fetch("http://localhost:4000/auth/signup", {
+            const res = await fetch("http://3.16.24.97:4000/auth/signup", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ firstName, lastName, location, age, email, password }),

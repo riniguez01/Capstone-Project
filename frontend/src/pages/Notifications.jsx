@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { useUser } from "../context/UserContext";
 
-const API = "http://localhost:4000";
+const API = "http://3.16.24.97:4000";
 
 export default function Notifications() {
     const { currentUser, token } = useUser();

@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect } from "react";
 
 const UserContext = createContext();
-const API = "http://localhost:4000";
+const API = "http://3.16.24.97:4000";
 
 export function UserProvider({ children }) {
     const [currentUser, setCurrentUser] = useState(() => {
