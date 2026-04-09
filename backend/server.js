@@ -25,12 +25,14 @@ const authRoutes    = require("./routes/auth");
 const profileRoutes = require("./routes/profile");
 const messageRoutes = require("./routes/messages");
 const dateRoutes    = require("./routes/dates");
+const checkinRoutes    = require("./routes/checkin");
 
 app.use("/matches",  matchRoutes);
 app.use("/auth",     authRoutes);
 app.use("/profile",  profileRoutes);
 app.use("/messages", messageRoutes);
 app.use("/dates",    dateRoutes);
+app.use("/checkin", checkinRoutes);
 
 app.get("/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
