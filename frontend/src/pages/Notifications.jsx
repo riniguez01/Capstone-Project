@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { useUser } from "../context/UserContext";
 
-const API = "https://backend.aura-dating.us";
+const API = "https://aura-backend-ysqh.onrender.com";
 
 export default function Notifications() {
     const { currentUser, token } = useUser();

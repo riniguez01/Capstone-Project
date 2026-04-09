@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect } from "react";
 
 const UserContext = createContext();
-const API = "https://backend.aura-dating.us";
+const API = "https://aura-backend-ysqh.onrender.com";
 
 export function UserProvider({ children }) {
     const [currentUser, setCurrentUser] = useState(() => {
