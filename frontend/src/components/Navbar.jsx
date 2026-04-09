@@ -1,156 +1,146 @@
-import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
 import { useUser } from "../context/UserContext";
 
 const API = "http://localhost:4000";
 
 function Navbar() {
-    const [open, setOpen]                   = useState(false);
+    const { currentUser, token } = useUser();
+    const [menuOpen,  setMenuOpen]  = useState(false);
+    const [notifOpen, setNotifOpen] = useState(false);
     const [notifications, setNotifications] = useState([]);
-    const [showNotifs, setShowNotifs]       = useState(false);
-    const notifRef                          = useRef(null);
-    const { currentUser, token }            = useUser();
-    const navigate                          = useNavigate();
-    const toggle = () => setOpen(!open);
+    const [unread, setUnread] = useState(0);
 
-    const unreadCount = notifications.filter(n => !n.is_read).length;
-
-    useEffect(() => {
+    const fetchNotifications = () => {
         if (!currentUser || !token) return;
-
-        const fetchNotifications = async () => {
-            try {
-                const res = await fetch(`${API}/dates/notifications/${currentUser.user_id}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                if (!res.ok) return;
-                const data = await res.json();
-                setNotifications(data.notifications || []);
-            } catch (err) {
-                console.error("Failed to fetch notifications:", err);
-            }
-        };
-
-        fetchNotifications();
-        const interval = setInterval(fetchNotifications, 60000);
-        return () => clearInterval(interval);
-    }, [currentUser, token]);
-
-    useEffect(() => {
-        const handler = (e) => {
-            if (notifRef.current && !notifRef.current.contains(e.target)) {
-                setShowNotifs(false);
-            }
-        };
-        document.addEventListener("mousedown", handler);
-        return () => document.removeEventListener("mousedown", handler);
-    }, []);
-
-    const handleNotifClick = async (notif) => {
-        setNotifications(prev =>
-            prev.map(n => n.notification_id === notif.notification_id ? { ...n, is_read: true } : n)
-        );
-
-        if (notif.type === "date_request") {
-            navigate("/dates/respond", { state: { notification: notif } });
-        } else if (notif.type === "date_accepted") {
-            navigate("/chat");
-        } else if (notif.type === "post_date_survey") {
-            navigate("/post-date-survey", {
-                state: { schedule_id: notif.payload?.schedule_id }
-            });
-        }
-
-        setShowNotifs(false);
+        fetch(`${API}/dates/notifications/${currentUser.user_id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        })
+            .then(r => r.json())
+            .then(data => {
+                if (data.notifications) {
+                    setNotifications(data.notifications);
+                    setUnread(data.notifications.filter(n => !n.is_read).length);
+                }
+            })
+            .catch(() => {});
     };
 
-    const notifLabel = (notif) => {
-        if (notif.type === "date_request") {
-            return `📅 Date request at ${notif.payload?.venue_name || "a venue"}`;
+    useEffect(() => {
+        fetchNotifications();
+    }, [currentUser, token]);
+
+    const handleRespond = async (scheduleId, response) => {
+        try {
+            await fetch(`${API}/dates/${scheduleId}/respond`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ response, user_id: currentUser.user_id }),
+            });
+            fetchNotifications();
+        } catch (err) {
+            console.error("Respond error:", err);
         }
-        if (notif.type === "date_accepted") {
-            return `✅ Your date was accepted!`;
+    };
+
+    const formatDate = (iso) => {
+        if (!iso) return "";
+        return new Date(iso).toLocaleString([], {
+            month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+        });
+    };
+
+    const formatNotif = (n) => {
+        const p = n.payload || {};
+        if (n.type === "date_request") {
+            return {
+                icon:     "📅",
+                title:    "Date Request",
+                body:     `${p.venue_name || "Venue"} · ${formatDate(p.proposed_datetime)}`,
+                showActions: true,
+                scheduleId:  p.schedule_id,
+            };
         }
-        if (notif.type === "post_date_survey") {
-            return `📝 How did your date go? Fill out your survey.`;
+        if (n.type === "date_accepted") {
+            return {
+                icon:  "✅",
+                title: "Date Accepted!",
+                body:  `${p.venue_name || "Your date"} on ${formatDate(p.proposed_datetime)} is confirmed.`,
+                showActions: false,
+            };
         }
-        return "New notification";
+        if (n.type === "post_date_survey") {
+            return {
+                icon:  "⭐",
+                title: "Rate Your Date",
+                body:  `How did your date at ${p.venue_name || "the venue"} go?`,
+                showActions: false,
+            };
+        }
+        return { icon: "🔔", title: n.type, body: "", showActions: false };
     };
 
     return (
         <>
-            <nav className="navbar navbar-dark navbar-color px-4" style={{ position: "relative", zIndex: 1100 }}>
-                <span className="navbar-brand" onClick={toggle} style={{ cursor: "pointer" }}>☰</span>
-
+            <nav className="navbar navbar-dark navbar-color px-4">
+                <span className="navbar-brand" onClick={() => setMenuOpen(!menuOpen)} style={{ cursor: "pointer" }}>☰</span>
                 <div className="d-flex gap-3 text-white align-items-center">
-
-                    {/* Notification bell */}
-                    <div ref={notifRef} style={{ position: "relative" }}>
-                        <i
-                            className="bi bi-bell"
-                            style={{ cursor: "pointer", fontSize: "1.1rem" }}
-                            onClick={() => setShowNotifs(!showNotifs)}
-                        />
-                        {unreadCount > 0 && (
-                            <span style={{
-                                position: "absolute", top: "-6px", right: "-8px",
-                                background: "#ff3b30", color: "white",
-                                borderRadius: "50%", fontSize: "10px",
-                                width: "16px", height: "16px",
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                fontWeight: 700,
-                            }}>
-                                {unreadCount > 9 ? "9+" : unreadCount}
-                            </span>
-                        )}
-
-                        {/* Dropdown panel */}
-                        {showNotifs && (
-                            <div style={{
-                                position: "absolute", top: "30px", right: 0,
-                                background: "white", borderRadius: "12px",
-                                boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
-                                minWidth: "280px", maxHeight: "320px",
-                                overflowY: "auto", zIndex: 2000,
-                            }}>
-                                {notifications.length === 0 ? (
-                                    <div className="p-3 text-muted small text-center">
-                                        No notifications yet
-                                    </div>
-                                ) : (
-                                    notifications.map(notif => (
-                                        <div
-                                            key={notif.notification_id}
-                                            onClick={() => handleNotifClick(notif)}
-                                            style={{
-                                                padding: "12px 16px",
-                                                borderBottom: "1px solid #f0f0f0",
-                                                cursor: "pointer",
-                                                background: notif.is_read ? "white" : "#fff5f5",
-                                                fontSize: "13px",
-                                            }}
-                                        >
-                                            <div style={{ fontWeight: notif.is_read ? 400 : 700 }}>
-                                                {notifLabel(notif)}
-                                            </div>
-                                            <div style={{ fontSize: "11px", color: "#aaa", marginTop: "3px" }}>
-                                                {new Date(notif.created_at).toLocaleString()}
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
+                    <div className="notif-bell-wrap" onClick={() => { setNotifOpen(!notifOpen); fetchNotifications(); }}>
+                        <i className="bi bi-bell"></i>
+                        {unread > 0 && (
+                            <span className="notif-badge">{unread}</span>
                         )}
                     </div>
-
-                    <i className="bi bi-share" style={{ cursor: "pointer" }} />
-                    <i className="bi bi-search" style={{ cursor: "pointer" }} />
+                    <i className="bi bi-share"></i>
+                    <i className="bi bi-search"></i>
                 </div>
             </nav>
 
-            {/* Sidebar */}
-            <div className={`sidebar ${open ? "open" : ""}`}>
-                <button className="close-btn" onClick={toggle}>×</button>
+            {notifOpen && (
+                <div className="notif-panel">
+                    <h5 className="section-title">🔔 Notifications</h5>
+                    {notifications.length === 0 && (
+                        <p className="text-muted small text-center mt-3">No notifications yet.</p>
+                    )}
+                    {notifications.map((n) => {
+                        const f = formatNotif(n);
+                        return (
+                            <div key={n.notification_id} className={`notif-item${n.is_read ? " notif-item--read" : ""}`}>
+                                <div className="notif-item__icon">{f.icon}</div>
+                                <div className="notif-item__body">
+                                    <div className="notif-item__title">{f.title}</div>
+                                    <div className="notif-item__text">{f.body}</div>
+                                    <div className="notif-item__time">{formatDate(n.created_at)}</div>
+                                    {f.showActions && !n.is_read && (
+                                        <div className="d-flex gap-2 mt-2">
+                                            <button
+                                                className="btn btn-sm btn-danger"
+                                                onClick={() => handleRespond(f.scheduleId, "approved")}
+                                            >
+                                                Accept
+                                            </button>
+                                            <button
+                                                className="btn btn-sm btn-outline-danger"
+                                                onClick={() => handleRespond(f.scheduleId, "rejected")}
+                                            >
+                                                Decline
+                                            </button>
+                                        </div>
+                                    )}
+                                    {f.showActions && n.is_read && (
+                                        <div className="notif-item__responded">Responded</div>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            <div className={`sidebar ${menuOpen ? "open" : ""}`}>
+                <button className="close-btn" onClick={() => setMenuOpen(false)}>×</button>
                 <ul className="list-unstyled mt-4">
                     <li><a href="/profile">Profile</a></li>
                     <li><a href="/matching">Matching</a></li>

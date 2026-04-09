@@ -12,6 +12,7 @@ function Login() {
 
     const handleLogin = async (e) => {
         e.preventDefault();
+        console.log("🔥 OUR LOGIN RUNNING");  // ← add this line
         if (!email.includes("@")) { setError("Please enter a valid email."); return; }
         if (password.length < 6)  { setError("Password must be at least 6 characters."); return; }
 
@@ -32,6 +33,7 @@ function Login() {
                 return;
             }
 
+            // Store in context + localStorage
             login(data.user, data.token);
             navigate("/matching");
         } catch (err) {

@@ -88,7 +88,7 @@ function PostDateSurvey() {
                         <div className="mb-3">
                             <label>Did you feel pressured? <span className="text-danger">*</span></label>
                             <ToggleGroup options={["Yes", "No"]} value={feltPressured} onChange={setFeltPressured} />
-                                                                                              </div>
+                        </div>
 
                         <div className="mb-3">
                             <label>Would you see them again? <span className="text-danger">*</span></label>

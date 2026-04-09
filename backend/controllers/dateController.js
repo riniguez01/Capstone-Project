@@ -1,6 +1,3 @@
-// controllers/dateController.js
-// Handles date requests, responses, and post-date survey triggering.
-
 const pool = require("../config/db");
 
 exports.sendDateRequest = async (req, res) => {
@@ -20,7 +17,7 @@ exports.sendDateRequest = async (req, res) => {
         }
 
         const { user1_id, user2_id } = matchResult.rows[0];
-        const recipient_id = user1_id === sender_id ? user2_id : user1_id;
+        const recipient_id = parseInt(sender_id) === user1_id ? user2_id : user1_id;
 
         const scheduleResult = await pool.query(
             `INSERT INTO date_scheduling (match_id, proposed_datetime, venue_type, venue_name, status, created_at)
@@ -83,11 +80,12 @@ exports.respondToDate = async (req, res) => {
             );
             const { user1_id, user2_id } = matchResult.rows[0];
 
+            const notifyUserId = parseInt(user_id) === user1_id ? user2_id : user1_id;
+
             await pool.query(
                 `INSERT INTO notifications (user_id, type, payload, is_read, created_at)
                  VALUES ($1, 'date_accepted', $2, false, NOW())`,
-                [user_id === user1_id ? user2_id : user1_id,
-                    JSON.stringify({ schedule_id: scheduleId, venue_name, proposed_datetime })]
+                [notifyUserId, JSON.stringify({ schedule_id: scheduleId, venue_name, proposed_datetime })]
             );
 
             await pool.query(
@@ -127,6 +125,74 @@ exports.getNotifications = async (req, res) => {
     } catch (err) {
         console.error("getNotifications error:", err.message);
         res.status(500).json({ error: "Failed to fetch notifications." });
+    }
+};
+
+exports.submitPostDateSurvey = async (req, res) => {
+    const userId = req.user.id;
+    const { schedule_id, comfortScore, feltSafe, boundariesRespected, feltPressured, wouldSeeAgain, comments } = req.body;
+
+    if (!schedule_id || feltPressured === undefined || !wouldSeeAgain) {
+        return res.status(400).json({ error: "schedule_id, feltPressured, and wouldSeeAgain are required." });
+    }
+
+    try {
+        const schedResult = await pool.query(
+            `SELECT ds.match_id, m.user1_id, m.user2_id
+             FROM date_scheduling ds
+             JOIN matches m ON m.match_id = ds.match_id
+             WHERE ds.schedule_id = $1`,
+            [schedule_id]
+        );
+
+        if (schedResult.rows.length === 0) {
+            return res.status(404).json({ error: "Schedule not found." });
+        }
+
+        const { user1_id, user2_id } = schedResult.rows[0];
+        const reviewed_user_id = parseInt(userId) === user1_id ? user2_id : user1_id;
+
+        await pool.query(
+            `INSERT INTO post_date_checkin
+                (schedule_id, reviewer_user_id, reviewed_user_id,
+                 comfort_level, felt_safe, boundaries_respected,
+                 felt_pressured, would_meet_again, short_comment, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+            [
+                schedule_id,
+                userId,
+                reviewed_user_id,
+                comfortScore || null,
+                feltSafe === "Yes",
+                boundariesRespected === "Yes",
+                feltPressured === "Yes",
+                wouldSeeAgain,
+                comments || null,
+            ]
+        );
+
+        if (feltPressured === "Yes") {
+            await pool.query(
+                `UPDATE trust_score
+                 SET internal_score = GREATEST(0, internal_score - 10),
+                     last_updated = NOW()
+                 WHERE user_id = $1`,
+                [reviewed_user_id]
+            );
+        } else if (wouldSeeAgain === "Yes") {
+            await pool.query(
+                `UPDATE trust_score
+                 SET internal_score = LEAST(100, internal_score + 5),
+                     last_updated = NOW()
+                 WHERE user_id = $1`,
+                [reviewed_user_id]
+            );
+        }
+
+        res.status(201).json({ message: "Survey submitted." });
+    } catch (err) {
+        console.error("submitPostDateSurvey error:", err.message);
+        res.status(500).json({ error: "Failed to submit survey." });
     }
 };
 
