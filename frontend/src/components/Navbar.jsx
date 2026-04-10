@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useUser } from "../context/UserContext";
 
-const API = "http://localhost:4000";
+const API = "https://aura-backend-ysqh.onrender.com";
 
 function Navbar() {
     const { currentUser, token } = useUser();

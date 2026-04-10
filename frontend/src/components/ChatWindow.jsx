@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import { useUser } from "../context/UserContext";
 
-const API = "http://localhost:4000";
+const API = "https://aura-backend-ysqh.onrender.com";
 
 function ChatWindow({ match, onBack }) {
     const navigate = useNavigate();
