@@ -759,7 +759,7 @@
     color: #a8001c;
     font-weight: 600;
     margin-top: 4px;
-}/* ─── Matching Page ──────────────────────────────────────────────────────── */
+}
 
 .match-page {
     display: flex;
@@ -774,7 +774,35 @@
     font-size: 13px;
     margin-bottom: 16px;
     display: flex;
+    flex-wrap: wrap;
     gap: 20px;
+    justify-content: center;
+}
+
+.match-counter__progress {
+    white-space: nowrap;
+}
+
+.match-counter__likes {
+    white-space: nowrap;
+}
+
+.match-like-alert {
+    color: #fff;
+    background: rgba(168, 0, 28, 0.85);
+    border-radius: 12px;
+    padding: 10px 16px;
+    margin-bottom: 12px;
+    max-width: 400px;
+    width: 100%;
+    text-align: center;
+    font-size: 14px;
+}
+
+.match-profile-image {
+    width: 60%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
 }
 
 .match-empty {
@@ -987,6 +1015,16 @@
 
 .btn-reject:hover {
     transform: scale(1.12);
+}
+
+.btn-reject:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-reject:disabled:hover {
+    transform: none;
 }
 
 .btn-heart {

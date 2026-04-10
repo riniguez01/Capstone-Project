@@ -3,8 +3,7 @@ import StarRating from "../components/StarRating";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "../context/UserContext";
-
-const API = "https://aura-backend-ysqh.onrender.com";
+import { API_BASE_URL } from "../config/api";
 
 function Pill({ label }) {
     if (!label) return null;
@@ -21,9 +20,10 @@ function InfoRow({ icon, text }) {
     );
 }
 
-function MatchCard({ user, onHeart, onReject, likesLeft }) {
+function MatchCard({ user, onHeart, onReject, likesLeft, heartPending, swipeHeartOut }) {
     const [animating, setAnimating] = useState(null);
     const outOfLikes = likesLeft !== null && likesLeft <= 0;
+    const heartLocked = outOfLikes || heartPending;
 
     const fire = (dir, cb) => {
         setAnimating(dir);
@@ -32,7 +32,7 @@ function MatchCard({ user, onHeart, onReject, likesLeft }) {
 
     const cardClass = [
         "match-card",
-        animating === "heart"  ? "match-card--swipe-heart"  : "",
+        swipeHeartOut ? "match-card--swipe-heart" : "",
         animating === "reject" ? "match-card--swipe-reject" : "",
     ].filter(Boolean).join(" ");
 
@@ -87,15 +87,18 @@ function MatchCard({ user, onHeart, onReject, likesLeft }) {
 
             <div className="match-card__actions">
                 <button
+                    type="button"
                     className="btn-reject"
-                    onClick={() => fire("reject", onReject)}
+                    disabled={heartPending}
+                    onClick={() => { if (!heartPending) fire("reject", onReject); }}
                 >✕</button>
 
                 <button
-                    className={`btn-heart${outOfLikes ? " btn-heart--disabled" : ""}`}
-                    onClick={() => { if (!outOfLikes) fire("heart", onHeart); }}
-                    disabled={outOfLikes}
-                    title={outOfLikes ? "Daily like limit reached" : "Like"}
+                    className={`btn-heart${heartLocked ? " btn-heart--disabled" : ""}`}
+                    type="button"
+                    onClick={() => { if (!heartLocked) onHeart(); }}
+                    disabled={heartLocked}
+                    title={outOfLikes ? "Daily like limit reached" : heartPending ? "Sending…" : "Like"}
                 >❤️</button>
             </div>
         </div>
@@ -129,32 +132,63 @@ export default function Matching() {
     const { matches, matchesLoading, matchesError, currentUser, token, likedUsers, addLikedUser, likesLeft, setLikesLeft, tierLimit } = useUser();
     const [currentIndex, setCurrentIndex] = useState(0);
     const [showItsMatch, setShowItsMatch] = useState(false);
+    const [heartPending, setHeartPending] = useState(false);
+    const [likeActionError, setLikeActionError] = useState("");
+    const [swipeHeartOut, setSwipeHeartOut] = useState(false);
     const navigate = useNavigate();
 
     useEffect(() => { if (!currentUser) navigate("/"); }, [currentUser, navigate]);
     useEffect(() => { setCurrentIndex(0); }, [matches]);
+    useEffect(() => { setLikeActionError(""); }, [currentIndex]);
 
-    const handleHeart = async () => {
+    const handleHeart = () => {
         const liked = matches[currentIndex];
-        if (!liked || !currentUser) return;
+        if (!liked || !currentUser || heartPending) return;
+        if (likesLeft !== null && likesLeft <= 0) return;
+        setHeartPending(true);
+        setLikeActionError("");
 
-        addLikedUser(liked);
-        setCurrentIndex(prev => prev + 1);
-        setLikesLeft(prev => (prev !== null ? Math.max(0, prev - 1) : null));
-
-        try {
-            const res = await fetch(`${API}/matches/${currentUser.user_id}/like`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ liked_user_id: liked.user_id }),
+        fetch(`${API_BASE_URL}/matches/${currentUser.user_id}/like`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ liked_user_id: liked.user_id }),
+        })
+            .then(async (res) => {
+                let data = {};
+                try {
+                    data = await res.json();
+                } catch {
+                    data = {};
+                }
+                if (res.status === 429) {
+                    setLikeActionError(data.error || "Daily like limit reached.");
+                    if (data.likes_left !== undefined) setLikesLeft(data.likes_left);
+                    setHeartPending(false);
+                    return;
+                }
+                const accepted = res.ok || res.status === 409;
+                if (!accepted) {
+                    setLikeActionError(data.error || "Could not send like.");
+                    setHeartPending(false);
+                    return;
+                }
+                if (data.likes_left !== undefined) setLikesLeft(data.likes_left);
+                setSwipeHeartOut(true);
+                setTimeout(() => {
+                    addLikedUser(liked);
+                    if (data.match_created) {
+                        setShowItsMatch(true);
+                        setTimeout(() => setShowItsMatch(false), 2000);
+                    }
+                    setCurrentIndex((prev) => prev + 1);
+                    setSwipeHeartOut(false);
+                    setHeartPending(false);
+                }, 350);
+            })
+            .catch(() => {
+                setLikeActionError("Could not connect to server.");
+                setHeartPending(false);
             });
-            const data = await res.json();
-            if (data.likes_left !== undefined) setLikesLeft(data.likes_left);
-            if (data.match_created) {
-                setShowItsMatch(true);
-                setTimeout(() => setShowItsMatch(false), 2000);
-            }
-        } catch (err) { console.error("Like failed:", err); }
     };
 
     const handleReject   = () => setCurrentIndex(prev => prev + 1);
@@ -192,13 +226,19 @@ export default function Matching() {
             )}
 
             <div className="faded-background min-vh-100 min-vw-100 match-page">
-                {!allSwiped && matches.length > 0 && (
+                {(likesLeft !== null || (!allSwiped && matches.length > 0)) && (
                     <div className="match-counter">
-                        <span>{currentIndex + 1} of {matches.length}</span>
+                        {!allSwiped && matches.length > 0 && (
+                            <span className="match-counter__progress">{currentIndex + 1} of {matches.length}</span>
+                        )}
                         {likesLeft !== null && (
-                            <span>❤️ {likesLeft} of {tierLimit} like{tierLimit !== 1 ? "s" : ""} left today</span>
+                            <span className="match-counter__likes">❤️ {likesLeft} of {tierLimit} like{tierLimit !== 1 ? "s" : ""} left today</span>
                         )}
                     </div>
+                )}
+
+                {likeActionError && (
+                    <div className="match-like-alert" role="alert">{likeActionError}</div>
                 )}
 
                 {allSwiped || matches.length === 0 ? (
@@ -217,10 +257,13 @@ export default function Matching() {
                     </div>
                 ) : (
                     <MatchCard
+                        key={matches[currentIndex].user_id}
                         user={matches[currentIndex]}
                         onHeart={handleHeart}
                         onReject={handleReject}
                         likesLeft={likesLeft}
+                        heartPending={heartPending}
+                        swipeHeartOut={swipeHeartOut}
                     />
                 )}
 

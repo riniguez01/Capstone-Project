@@ -12,9 +12,8 @@ function Match({ user, onHeart, onReject }) {
 
                     <img
                         src={user.image}
-                        className="rounded mt-4"
+                        className="rounded mt-4 match-profile-image"
                         alt="profile"
-                        style={{ width: "60%", aspectRatio: "1/1", objectFit: "cover" }}
                     />
 
                     <button className="btn btn-outline-danger mt-5" onClick={onHeart}>

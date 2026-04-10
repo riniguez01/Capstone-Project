@@ -1,7 +1,7 @@
 const scoreMatch = require("./scoreMatch");
 
-const TRUST_PENALTY_THRESHOLD = 50;
-const TRUST_PENALTY_AMOUNT    = 15;
+const TRUST_PENALTY_THRESHOLD = 55;
+const TRUST_PENALTY_AMOUNT = 15;
 
 module.exports = function rankMatches(user, filteredCandidates) {
     return filteredCandidates

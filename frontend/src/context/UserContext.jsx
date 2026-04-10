@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect } from "react";
+import { API_BASE_URL } from "../config/api";
 
 const UserContext = createContext();
-const API = "https://aura-backend-ysqh.onrender.com";
 
 export function UserProvider({ children }) {
     const [currentUser, setCurrentUser] = useState(() => {
@@ -45,7 +45,7 @@ export function UserProvider({ children }) {
             setMatchesLoading(true);
             setMatchesError(null);
             try {
-                const res = await fetch(`${API}/matches/${currentUser.user_id}`, {
+                const res = await fetch(`${API_BASE_URL}/matches/${currentUser.user_id}`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
                 const data = await res.json();
