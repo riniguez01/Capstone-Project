@@ -59,7 +59,14 @@ exports.getMatches = async (req, res) => {
         const user = await getUserById(userId);
         if (!user) return res.status(404).json({ error: "User not found" });
 
-        const candidates = await getCandidates(userId);
+        const swipedResult = await pool.query(
+            `SELECT swiped_user_id FROM swipes WHERE swipe_user_id = $1`,
+            [userId]
+        );
+        const swipedIds = new Set(swipedResult.rows.map(r => r.swiped_user_id));
+
+        const allCandidates = await getCandidates(userId);
+        const candidates = allCandidates.filter(c => !swipedIds.has(c.user_id));
         const matches = await generateMatches(user, candidates, shouldRank);
 
         const likesToday = await getLikesToday(userId);
@@ -75,31 +82,31 @@ exports.getMatches = async (req, res) => {
             return {
                 user_id:              c.user_id,
                 name:                 `${c.first_name} ${c.last_name}`.trim(),
-                first_name:           c.first_name              || null,
-                last_name:            c.last_name               || null,
+                first_name:           c.first_name           || null,
+                last_name:            c.last_name            || null,
                 age:                  getAge(c.date_of_birth),
-                gender:               c.gender_name             || null,
+                gender:               c.gender_name          || null,
                 height:               inchesToDisplay(c.height_inches),
                 location:             c.location_city
                     ? `${c.location_city}${c.location_state ? ", " + c.location_state : ""}`.trim()
                     : null,
-                location_city:        c.location_city           || null,
-                location_state:       c.location_state          || null,
-                bio:                  c.bio                     || null,
-                image:                c.profile_photo_url       || avatarUrl,
+                location_city:        c.location_city        || null,
+                location_state:       c.location_state       || null,
+                bio:                  c.bio                  || null,
+                image:                c.profile_photo_url    || avatarUrl,
                 starRating:           trustToStars(c.trust_score),
-                religion_name:        c.religion_name           || null,
-                activity_name:        c.activity_name           || null,
-                children_name:        c.children_name           || null,
-                political_name:       c.political_name          || null,
-                dating_goals_name:    c.dating_goals_name       || null,
-                smoking_name:         c.smoking_name            || null,
-                drinking_name:        c.drinking_name           || null,
-                diet_name:            c.diet_name               || null,
-                music_name:           c.music_name              || null,
-                family_oriented_name: c.family_oriented_name    || null,
-                personality_name:     c.personality_type_name   || null,
-                education_name:       c.education_career_name   || null,
+                religion_name:        c.religion_name        || null,
+                activity_name:        c.activity_name        || null,
+                children_name:        c.children_name        || null,
+                political_name:       c.political_name       || null,
+                dating_goals_name:    c.dating_goals_name    || null,
+                smoking_name:         c.smoking_name         || null,
+                drinking_name:        c.drinking_name        || null,
+                diet_name:            c.diet_name            || null,
+                music_name:           c.music_name           || null,
+                family_oriented_name: c.family_oriented_name || null,
+                personality_name:     c.personality_type_name|| null,
+                education_name:       c.education_career_name|| null,
                 score:                match.score,
                 raw_score:            match.raw_score,
                 trust_penalized:      match.trust_penalized,

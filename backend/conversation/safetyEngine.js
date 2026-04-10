@@ -44,11 +44,8 @@ function canTransitionTo(requiredState, conv) {
 
     // Entry conditions per target state
     if (requiredState === STATE.FLIRTING) {
-        // S0 → S1: both users must have sent at least 2 messages each and exchanged at least 2 alternating replies
-        const bothSentEnough = conv.initiators.size >= 2 &&
-            Object.values(conv.messageCounts).every(c => c >= 2);
-        return bothSentEnough &&
-            conv.alternatingCount >= 2 &&
+        // S0 → S1: both users must have initiated at least once
+        return conv.initiators.size >= 2 &&
             conv.resistanceWindow.filter(Boolean).length === 0;
     }
 
@@ -214,19 +211,32 @@ function _updateCounters(conv, senderId, recipientId, category, willDeliver) {
         conv.repeatRequestCount++;
     }
 
-    // Resistance tracking — refusal from recipient updates resistance window
-    // We detect refusals in the RECIPIENT's messages (when they send back a refusal)
-    const isRefusal = category === 'refusal';
-    conv.resistanceWindow = [...conv.resistanceWindow.slice(-4), isRefusal];
-    if (isRefusal) conv.resistanceCount++;
+    // Resistance tracking — only count when the RECIPIENT sends a refusal back.
+    // The sender is the one being tracked for pressure; the recipient pushing back
+    // is the signal that a boundary has been set.
+    const isRecipientRefusal = category === 'refusal' && conv.lastSenderId !== null && conv.lastSenderId !== senderId;
+    conv.resistanceWindow = [...conv.resistanceWindow.slice(-4), isRecipientRefusal];
+    if (isRecipientRefusal) conv.resistanceCount++;
 
     // Update consent score
     conv.consentScore = updateConsentScore(conv, isAlternating);
 
-    // State advances only through explicit flirty message transitions, not automatically
+    // Try advancing state naturally (organic progression for normal messages)
+    if (category === 'normal' || category === 'flirty') {
+        _tryNaturalStateAdvance(conv);
+    }
 
     // Update last sender
     conv.lastSenderId = senderId;
+}
+
+// ─── Attempt natural state progression ────────────────────────────────────
+function _tryNaturalStateAdvance(conv) {
+    if (conv.state === STATE.INTRODUCTORY &&
+        conv.initiators.size >= 2 &&
+        conv.resistanceWindow.filter(Boolean).length === 0) {
+        conv.state = STATE.FLIRTING;
+    }
 }
 
 // ─── Human-readable block reasons ─────────────────────────────────────────

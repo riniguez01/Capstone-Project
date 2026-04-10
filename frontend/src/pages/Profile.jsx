@@ -1,6 +1,10 @@
 import Navbar from "../components/Navbar";
 import StarRating from "../components/StarRating";
 import { useUser } from "../context/UserContext";
+import beatrice from "../assets/beatrice.png";
+import { useState, useEffect } from "react";
+
+const API = "http://localhost:4000";
 
 function ToggleGroup({ options, value, onChange }) {
     return (
@@ -20,7 +24,10 @@ function ToggleGroup({ options, value, onChange }) {
 }
 
 function Profile() {
-    const { profile, setProfile, preferences, setPreferences, currentUser } = useUser();
+    const { profile, setProfile, preferences, setPreferences, currentUser, token } = useUser();
+    const [saveError, setSaveError] = useState(null);
+    const [saveSuccess, setSaveSuccess] = useState(false);
+
     const updateProfile = (field, value) => setProfile((prev) => ({ ...prev, [field]: value }));
     const updatePref = (field, value) => setPreferences((prev) => ({ ...prev, [field]: value }));
 
@@ -32,18 +39,7 @@ function Profile() {
         return `${ft}'${inch}"`;
     };
 
-    const getInitials = () => {
-        if (currentUser) {
-            const first = (currentUser.first_name || "").charAt(0).toUpperCase();
-            const last  = (currentUser.last_name  || "").charAt(0).toUpperCase();
-            return first + last;
-        }
-        return "U";
-    };
-
-    const fallbackAvatar = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300' viewBox='0 0 300 300'%3E%3Crect width='300' height='300' rx='150' fill='%23a8001c'/%3E%3Ccircle cx='150' cy='118' r='52' fill='%23f2d0d5'/%3E%3Cellipse cx='150' cy='245' rx='82' ry='62' fill='%23f2d0d5'/%3E%3Ctext x='150' y='130' text-anchor='middle' dominant-baseline='middle' fill='white' font-size='52' font-family='Arial,sans-serif' font-weight='700'%3E${getInitials()}%3C/text%3E%3C/svg%3E`;
-
-    const profilePic = profile.profilePic || fallbackAvatar;
+    const profilePic = profile.profilePic || beatrice;
 
     const handleImageChange = (e) => {
         const file = e.target.files[0];
@@ -53,8 +49,101 @@ function Profile() {
         }
     };
 
-    const handleSave = () => {
-        alert("Profile saved successfully!");
+    useEffect(() => {
+        if (!token) return;
+        fetch(`${API}/profile/preferences`, {
+            headers: { Authorization: `Bearer ${token}` },
+        })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (data?.preferences) {
+                    setPreferences(prev => ({ ...prev, ...data.preferences }));
+                }
+            })
+            .catch(() => {});
+    }, [token]);
+
+    const handleSave = async () => {
+        setSaveError(null);
+        setSaveSuccess(false);
+
+        if (!currentUser || !token) {
+            setSaveError("You must be logged in to save.");
+            return;
+        }
+
+        const locVal = profile.location || "";
+        if (locVal.trim() && !locVal.includes(",")) {
+            setSaveError("Please enter your location as City, State (e.g. Chicago, IL).");
+            return;
+        }
+
+        try {
+            const profileRes = await fetch(`${API}/profile/save`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({
+                    name:             profile.name,
+                    location:         profile.location,
+                    bio:              profile.bio,
+                    height:           profile.height,
+                    gender:           profile.gender,
+                    religion:         profile.religion,
+                    ethnicity:        profile.ethnicity,
+                    education:        profile.education,
+                    familyOriented:   profile.familyOriented,
+                    smoker:           profile.smoker,
+                    drinker:          profile.drinker,
+                    coffeeDrinker:    profile.coffeeDrinker,
+                    diet:             profile.diet,
+                    activityLevel:    profile.activityLevel,
+                    musicPref:        profile.musicPref,
+                    gamer:            profile.gamer,
+                    reader:           profile.reader,
+                    travel:           profile.travel,
+                    pets:             profile.pets,
+                    personality:      profile.personality,
+                    datingGoal:       profile.datingGoal,
+                    astrology:        profile.astrology,
+                    children:         profile.children,
+                    politicalStanding: profile.politicalStanding,
+                }),
+            });
+
+            const profileData = await profileRes.json();
+            if (!profileRes.ok) {
+                setSaveError(profileData.error || "Failed to save profile.");
+                return;
+            }
+
+            const prefRes = await fetch(`${API}/profile/preferences`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({
+                    genderPref:     preferences.genderPref,
+                    minAge:         preferences.minAge,
+                    maxAge:         preferences.maxAge,
+                    minHeight:      preferences.minHeight,
+                    maxHeight:      preferences.maxHeight,
+                    religionPref:   preferences.religionPref,
+                    ethnicityPref:  preferences.ethnicityPref,
+                    politicalPref:  preferences.politicalPref,
+                    childrenPref:   preferences.childrenPref,
+                    datingGoalPref: preferences.datingGoalPref,
+                }),
+            });
+
+            const prefData = await prefRes.json();
+            if (!prefRes.ok) {
+                setSaveError(prefData.error || "Failed to save preferences.");
+                return;
+            }
+
+            setSaveSuccess(true);
+            setTimeout(() => setSaveSuccess(false), 3000);
+        } catch {
+            setSaveError("Could not connect to server. Please try again.");
+        }
     };
 
     return (
@@ -63,25 +152,23 @@ function Profile() {
             <div className="container d-flex justify-content-center align-items-center text-center faded-background min-vh-100 min-vw-100">
                 <div className="login-card p-4 text-center mb-4">
 
-                    <div className="profile-photo-section">
+                    <div className="bg-white profile-photo-wrap">
                         <img
                             src={profilePic}
-                            className="profile-photo mb-2 mt-3"
+                            className="rounded mb-3 mt-5 profile-pic"
                             alt="profile"
+
                             onClick={() => document.getElementById("picUpload").click()}
                         />
                         <input
                             id="picUpload"
                             type="file"
                             accept="image/*"
-                            className="d-none"
+                            className="profile-pic-input"
                             onChange={handleImageChange}
                         />
-                        <div
-                            className="text-muted small mb-2 bi-camera profile-photo-label"
-                            onClick={() => document.getElementById("picUpload").click()}
-                        >
-                            Change Photo
+                        <div className="text-muted small mb-2 bi-camera profile-change-photo" onClick={() => document.getElementById("picUpload").click()}>
+                            -Change Photo
                         </div>
                         <div className="pb-2">
                             <StarRating rating={starRating} />
@@ -96,8 +183,13 @@ function Profile() {
                     </div>
 
                     <div className="mb-3 text-start">
-                        <label>Location</label>
-                        <input className="form-control" value={profile.location} onChange={(e) => updateProfile("location", e.target.value)} />
+                        <label>Location <span className="text-muted location-hint">(City, State — e.g. Chicago, IL)</span></label>
+                        <input
+                            className="form-control"
+                            value={profile.location}
+                            placeholder="Chicago, IL"
+                            onChange={(e) => updateProfile("location", e.target.value)}
+                        />
                     </div>
 
                     <div className="mb-4 text-start">
@@ -318,7 +410,7 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Age Range: {preferences.minAge} – {preferences.maxAge}</label>
-                        <div className="dual-range-wrap">
+                        <div className="range-wrap">
                             <input type="range" min="18" max="100" value={preferences.minAge}
                                    onChange={(e) => updatePref("minAge", Math.min(Number(e.target.value), preferences.maxAge - 1))}
                                    className="dual-range dual-range-min" />
@@ -330,7 +422,7 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Height Range: {inchesToDisplay(preferences.minHeight)} – {inchesToDisplay(preferences.maxHeight)}</label>
-                        <div className="dual-range-wrap">
+                        <div className="range-wrap">
                             <input type="range" min="48" max="96" value={preferences.minHeight}
                                    onChange={(e) => updatePref("minHeight", Math.min(Number(e.target.value), preferences.maxHeight - 1))}
                                    className="dual-range dual-range-min" />
@@ -387,7 +479,7 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Children Preference</label>
-                        <ToggleGroup options={["Has kids", "Wants kids", "No kids", "No preference"]} value={preferences.childrenPref} onChange={(v) => updatePref("childrenPref", v)} />
+                        <ToggleGroup options={["Have kids", "Want kids", "Don't want kids", "No preference"]} value={preferences.childrenPref} onChange={(v) => updatePref("childrenPref", v)} />
                     </div>
 
                     <div className="mb-3 text-start">
@@ -399,6 +491,18 @@ function Profile() {
                         <label>Dating Goals Preference</label>
                         <ToggleGroup options={["Casual", "Serious", "Long-term", "No preference"]} value={preferences.datingGoalPref} onChange={(v) => updatePref("datingGoalPref", v)} />
                     </div>
+
+                    {saveError && (
+                        <div className="alert alert-danger py-2 text-start alert-sm">
+                            {saveError}
+                        </div>
+                    )}
+
+                    {saveSuccess && (
+                        <div className="alert alert-success py-2 text-start alert-sm">
+                            Profile saved successfully!
+                        </div>
+                    )}
 
                     <div>
                         <button className="btn btn-danger me-2 mb-2">

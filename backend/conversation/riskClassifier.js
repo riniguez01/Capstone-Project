@@ -20,20 +20,18 @@
 // BLOCK immediately — explicit sexual content or coercion
 const EXPLICIT_PATTERNS = [
     /\b(send (me )?(nudes?|pics?|photos?|a pic))\b/i,
-    /\bwanna (f|hook ?up|smash|bang)\b/i,
     /\b(want to|wanna|let'?s) hook ?up\b/i,
-    /\b(DTF|down to f[a-z]*)\b/i,
-    /\b(sex|sexual|naked|nude)\b/i,
     /\b(come over|come to my (place|apartment|house|hotel))\b/i,
     /\b(netflix and chill)\b/i,
     /\b(sleep with (me|you))\b/i,
+    /\b(DTF)\b/i,
 ];
 
 const COERCIVE_PATTERNS = [
     /\b(if you (don'?t|won'?t|refuse|ignore))\b/i,
     /\b(or else|you have to|you need to|you must|i demand)\b/i,
     /\b(you owe me)\b/i,
-    /\b(stop being (so |such )?(difficult|stuck up|prude|boring))\b/i,
+    /\b(stop being (so |such )?(difficult|boring|rude|unreasonable))\b/i,
 ];
 
 // WARN — pressure signals (riskLevel 1)
