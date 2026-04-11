@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useUser } from "../context/UserContext";
 
-const API = "https://aura-backend-ysqh.onrender.com";
+const API = "http://localhost:4000";
 
 function Navbar() {
     const { currentUser, token } = useUser();
@@ -27,6 +27,8 @@ function Navbar() {
 
     useEffect(() => {
         fetchNotifications();
+        const interval = setInterval(fetchNotifications, 60000);
+        return () => clearInterval(interval);
     }, [currentUser, token]);
 
     const handleRespond = async (scheduleId, response) => {
@@ -56,26 +58,34 @@ function Navbar() {
         const p = n.payload || {};
         if (n.type === "date_request") {
             return {
-                icon:     "📅",
-                title:    "Date Request",
-                body:     `${p.venue_name || "Venue"} · ${formatDate(p.proposed_datetime)}`,
+                icon:        "📅",
+                title:       `${p.sender_name || "Someone"} sent a date request`,
+                body:        `${p.venue_name || "Venue"} · ${formatDate(p.proposed_datetime)}`,
                 showActions: true,
                 scheduleId:  p.schedule_id,
             };
         }
         if (n.type === "date_accepted") {
             return {
-                icon:  "✅",
-                title: "Date Accepted!",
-                body:  `${p.venue_name || "Your date"} on ${formatDate(p.proposed_datetime)} is confirmed.`,
+                icon:        "✅",
+                title:       `${p.responder_name || "Your match"} accepted your date!`,
+                body:        `${p.venue_name || "Your date"} on ${formatDate(p.proposed_datetime)} is confirmed.`,
+                showActions: false,
+            };
+        }
+        if (n.type === "date_declined") {
+            return {
+                icon:        "❌",
+                title:       `${p.responder_name || "Your match"} declined your date request.`,
+                body:        p.venue_name ? `Venue: ${p.venue_name}` : "",
                 showActions: false,
             };
         }
         if (n.type === "post_date_survey") {
             return {
-                icon:  "⭐",
-                title: "Rate Your Date",
-                body:  `How did your date at ${p.venue_name || "the venue"} go?`,
+                icon:        "⭐",
+                title:       "Rate Your Date",
+                body:        `How did your date at ${p.venue_name || "the venue"} go?`,
                 showActions: false,
             };
         }
@@ -85,7 +95,7 @@ function Navbar() {
     return (
         <>
             <nav className="navbar navbar-dark navbar-color px-4">
-                <span className="navbar-brand" onClick={() => setMenuOpen(!menuOpen)} style={{ cursor: "pointer" }}>☰</span>
+                <span className="navbar-brand navbar-toggle" onClick={() => setMenuOpen(!menuOpen)}>☰</span>
                 <div className="d-flex gap-3 text-white align-items-center">
                     <div className="notif-bell-wrap" onClick={() => { setNotifOpen(!notifOpen); fetchNotifications(); }}>
                         <i className="bi bi-bell"></i>

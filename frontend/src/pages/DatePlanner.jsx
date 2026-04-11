@@ -3,49 +3,14 @@ import { useLocation, useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { useUser } from "../context/UserContext";
 
-const API = "https://aura-backend-ysqh.onrender.com";
+const API = "http://localhost:4000";
 
 const VENUES = [
-    {
-        icon: "🍽️",
-        name: "Restaurant",
-        suggestion: "Piccolo Sogno",
-        venue_type: "public",
-        lat: 41.8851,
-        lng: -87.6445,
-    },
-    {
-        icon: "🎬",
-        name: "Movie Theater",
-        suggestion: "AMC River East",
-        venue_type: "public",
-        lat: 41.8918,
-        lng: -87.6196,
-    },
-    {
-        icon: "☕",
-        name: "Coffee Shop",
-        suggestion: "Intelligentsia Coffee",
-        venue_type: "public",
-        lat: 41.9003,
-        lng: -87.6779,
-    },
-    {
-        icon: "🎳",
-        name: "Bowling",
-        suggestion: "Pinstripes",
-        venue_type: "semi-public",
-        lat: 41.8960,
-        lng: -87.6270,
-    },
-    {
-        icon: "🌳",
-        name: "Park / Outdoors",
-        suggestion: "Millennium Park",
-        venue_type: "public",
-        lat: 41.8827,
-        lng: -87.6233,
-    },
+    { icon: "🍽️", name: "Restaurant",    suggestion: "Piccolo Sogno",         venue_type: "public",      lat: 41.8851, lng: -87.6445 },
+    { icon: "🎬", name: "Movie Theater",  suggestion: "AMC River East",         venue_type: "public",      lat: 41.8918, lng: -87.6196 },
+    { icon: "☕", name: "Coffee Shop",    suggestion: "Intelligentsia Coffee",  venue_type: "public",      lat: 41.9003, lng: -87.6779 },
+    { icon: "🎳", name: "Bowling",        suggestion: "Pinstripes",             venue_type: "semi-public", lat: 41.8960, lng: -87.6270 },
+    { icon: "🌳", name: "Park / Outdoors",suggestion: "Millennium Park",        venue_type: "public",      lat: 41.8827, lng: -87.6233 },
 ];
 
 const TIME_SLOTS = [
@@ -78,7 +43,6 @@ function VenueMap({ venues, selectedVenue, onSelect }) {
                 const marker = window.L.marker([venue.lat, venue.lng])
                     .addTo(map)
                     .bindPopup(`<b>${venue.icon} ${venue.name}</b><br/>${venue.suggestion}`);
-
                 marker.on("click", () => onSelect(venue));
                 markersRef.current.push({ marker, venue });
             });
@@ -86,9 +50,7 @@ function VenueMap({ venues, selectedVenue, onSelect }) {
         };
 
         if (!init()) {
-            const interval = setInterval(() => {
-                if (init()) clearInterval(interval);
-            }, 100);
+            const interval = setInterval(() => { if (init()) clearInterval(interval); }, 100);
             return () => clearInterval(interval);
         }
     }, []);
@@ -106,12 +68,7 @@ function VenueMap({ venues, selectedVenue, onSelect }) {
         });
     }, [selectedVenue]);
 
-    return (
-        <div
-            ref={mapRef}
-            className="venue-map"
-        />
-    );
+    return <div ref={mapRef} className="venue-map" />;
 }
 
 function DatePlanner() {
@@ -156,16 +113,17 @@ function DatePlanner() {
                     Authorization: `Bearer ${token}`,
                 },
                 body: JSON.stringify({
-                    match_id:          match?.match_id    || null,
-                    sender_id:         currentUser?.user_id || null,
+                    match_id:          match?.match_id       || null,
+                    sender_id:         currentUser?.user_id  || null,
                     venue_type:        selectedVenue.venue_type,
                     venue_name:        selectedVenue.suggestion,
                     proposed_datetime,
                 }),
             });
 
+            const data = await res.json();
+
             if (!res.ok) {
-                const data = await res.json();
                 setError(data.error || "Failed to send date request.");
                 return;
             }
@@ -180,7 +138,6 @@ function DatePlanner() {
     return (
         <>
             <Navbar />
-
             <div className="container d-flex justify-content-center faded-background min-vh-100 min-vw-100 pt-4">
                 <div className="login-card p-4 mb-4 text-start date-planner-card">
 
@@ -190,8 +147,7 @@ function DatePlanner() {
                                 <img
                                     src={match.image}
                                     alt={match.name}
-                                    className="rounded-circle mb-2"
-                                    style={{ width: "60px", height: "60px", objectFit: "cover", border: "2px solid #c94b5b" }}
+                                    className="date-planner-match-avatar rounded-circle mb-2"
                                 />
                                 <h4 className="mb-0">Plan a date with {match.name}</h4>
                             </>
@@ -202,11 +158,7 @@ function DatePlanner() {
                     </div>
 
                     <div className="mb-4">
-                        <VenueMap
-                            venues={VENUES}
-                            selectedVenue={selectedVenue}
-                            onSelect={setSelectedVenue}
-                        />
+                        <VenueMap venues={VENUES} selectedVenue={selectedVenue} onSelect={setSelectedVenue} />
                     </div>
 
                     {selectedVenue && (
@@ -241,10 +193,9 @@ function DatePlanner() {
                                     type="radio"
                                     readOnly
                                     checked={selectedSlot?.label === slot.label}
-                                    className="form-check-input mt-0"
-                                    style={{ accentColor: "#a8001c" }}
+                                    className="form-check-input mt-0 time-slot-radio"
                                 />
-                                <label style={{ cursor: "pointer" }}>{slot.label}</label>
+                                <label className="time-slot-label">{slot.label}</label>
                             </div>
                         ))}
                     </div>

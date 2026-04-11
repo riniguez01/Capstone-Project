@@ -5,13 +5,13 @@ import ChatList from "../components/ChatList";
 import ChatWindow from "../components/ChatWindow";
 import { useUser } from "../context/UserContext";
 
-const API = "https://aura-backend-ysqh.onrender.com";
+const API = "http://localhost:4000";
 
 function Chat() {
     const { currentUser, token } = useUser();
     const location = useLocation();
 
-    const [mutualMatches, setMutualMatches] = useState([]);
+    const [mutualMatches,  setMutualMatches]  = useState([]);
     const [loadingMatches, setLoadingMatches] = useState(true);
 
     const [selectedMatch, setSelectedMatch] = useState(
