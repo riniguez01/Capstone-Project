@@ -1,10 +1,52 @@
 import Navbar from "../components/Navbar";
 import StarRating from "../components/StarRating";
 import { useUser } from "../context/UserContext";
-import beatrice from "../assets/beatrice.png";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { API_BASE_URL } from "../config/api";
 
-const API = "http://localhost:4000";
+function trustToStars(trustScore) {
+    if (trustScore === null || trustScore === undefined) return 3;
+    if (trustScore <= 40) return 1;
+    if (trustScore <= 55) return 2;
+    if (trustScore <= 70) return 3;
+    if (trustScore <= 85) return 4;
+    return 5;
+}
+
+function initialsFromName(name) {
+    const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return "?";
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+    });
+}
+
+function nameForInitials(profile, currentUser) {
+    const n = profile.name?.trim();
+    if (n) return n;
+    const fromContext = [currentUser?.first_name, currentUser?.last_name].filter(Boolean).join(" ").trim();
+    if (fromContext) return fromContext;
+    try {
+        const raw = localStorage.getItem("user");
+        if (!raw) return "";
+        const u = JSON.parse(raw);
+        const fromLs = [u.first_name, u.last_name].filter(Boolean).join(" ").trim();
+        if (fromLs) return fromLs;
+        const em = u.email;
+        if (typeof em === "string" && em.includes("@")) return em.split("@")[0] || "";
+    } catch {
+        return "";
+    }
+    return "";
+}
 
 function ToggleGroup({ options, value, onChange }) {
     return (
@@ -24,14 +66,26 @@ function ToggleGroup({ options, value, onChange }) {
 }
 
 function Profile() {
-    const { profile, setProfile, preferences, setPreferences, currentUser, token } = useUser();
+    const {
+        profile,
+        setProfile,
+        preferences,
+        setPreferences,
+        currentUser,
+        token,
+        refreshMatches,
+        accountProfileLoaded,
+        syncSessionFromAuthUser,
+    } = useUser();
     const [saveError, setSaveError] = useState(null);
     const [saveSuccess, setSaveSuccess] = useState(false);
+    const pendingPhotoFileRef = useRef(null);
+    const lastBlobUrlRef = useRef(null);
 
     const updateProfile = (field, value) => setProfile((prev) => ({ ...prev, [field]: value }));
     const updatePref = (field, value) => setPreferences((prev) => ({ ...prev, [field]: value }));
 
-    const starRating = 3;
+    const starRating = trustToStars(profile.trustScore);
 
     const inchesToDisplay = (inches) => {
         const ft = Math.floor(inches / 12);
@@ -39,29 +93,29 @@ function Profile() {
         return `${ft}'${inch}"`;
     };
 
-    const profilePic = profile.profilePic || beatrice;
+    const pic = profile.profilePic;
+    const showPhoto = Boolean(
+        pic && (pic.startsWith("http") || pic.startsWith("blob:") || pic.startsWith("data:") || pic.startsWith("/"))
+    );
+
+    const displayNameForInitials = nameForInitials(profile, currentUser);
 
     const handleImageChange = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const url = URL.createObjectURL(file);
-            updateProfile("profilePic", url);
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (lastBlobUrlRef.current) {
+            URL.revokeObjectURL(lastBlobUrlRef.current);
+            lastBlobUrlRef.current = null;
         }
+        pendingPhotoFileRef.current = file;
+        const url = URL.createObjectURL(file);
+        lastBlobUrlRef.current = url;
+        updateProfile("profilePic", url);
     };
 
-    useEffect(() => {
-        if (!token) return;
-        fetch(`${API}/profile/preferences`, {
-            headers: { Authorization: `Bearer ${token}` },
-        })
-            .then(r => r.ok ? r.json() : null)
-            .then(data => {
-                if (data?.preferences) {
-                    setPreferences(prev => ({ ...prev, ...data.preferences }));
-                }
-            })
-            .catch(() => {});
-    }, [token]);
+    useEffect(() => () => {
+        if (lastBlobUrlRef.current) URL.revokeObjectURL(lastBlobUrlRef.current);
+    }, []);
 
     const handleSave = async () => {
         setSaveError(null);
@@ -79,7 +133,28 @@ function Profile() {
         }
 
         try {
-            const profileRes = await fetch(`${API}/profile/save`, {
+            if (pendingPhotoFileRef.current) {
+                const dataUrl = await readFileAsDataUrl(pendingPhotoFileRef.current);
+                const photoRes = await fetch(`${API_BASE_URL}/profile/photo`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ photo_url: dataUrl }),
+                });
+                const photoData = await photoRes.json();
+                if (!photoRes.ok) {
+                    setSaveError(photoData.error || "Failed to save photo.");
+                    return;
+                }
+                const savedUrl = photoData.photo_url;
+                if (lastBlobUrlRef.current) {
+                    URL.revokeObjectURL(lastBlobUrlRef.current);
+                    lastBlobUrlRef.current = null;
+                }
+                pendingPhotoFileRef.current = null;
+                updateProfile("profilePic", savedUrl);
+            }
+
+            const profileRes = await fetch(`${API_BASE_URL}/profile/save`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
                 body: JSON.stringify({
@@ -116,7 +191,7 @@ function Profile() {
                 return;
             }
 
-            const prefRes = await fetch(`${API}/profile/preferences`, {
+            const prefRes = await fetch(`${API_BASE_URL}/profile/preferences`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
                 body: JSON.stringify({
@@ -130,6 +205,8 @@ function Profile() {
                     politicalPref:  preferences.politicalPref,
                     childrenPref:   preferences.childrenPref,
                     datingGoalPref: preferences.datingGoalPref,
+                    activityPref:   preferences.activityPref,
+                    familyOrientedPref: preferences.familyOrientedPref,
                 }),
             });
 
@@ -141,10 +218,29 @@ function Profile() {
 
             setSaveSuccess(true);
             setTimeout(() => setSaveSuccess(false), 3000);
+            await refreshMatches();
+            const meRes = await fetch(`${API_BASE_URL}/auth/me`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (meRes.ok) {
+                const meData = await meRes.json();
+                if (meData?.user) syncSessionFromAuthUser(meData.user);
+            }
         } catch {
             setSaveError("Could not connect to server. Please try again.");
         }
     };
+
+    if (token && !accountProfileLoaded) {
+        return (
+            <>
+                <Navbar />
+                <div className="container d-flex justify-content-center align-items-center text-center faded-background min-vh-100 min-vw-100">
+                    <div className="profile-loading">Loading profile…</div>
+                </div>
+            </>
+        );
+    }
 
     return (
         <>
@@ -153,13 +249,30 @@ function Profile() {
                 <div className="login-card p-4 text-center mb-4">
 
                     <div className="bg-white profile-photo-wrap">
-                        <img
-                            src={profilePic}
-                            className="rounded mb-3 mt-5 profile-pic"
-                            alt="profile"
-
+                        <div
+                            className="profile-avatar-shell"
                             onClick={() => document.getElementById("picUpload").click()}
-                        />
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    document.getElementById("picUpload").click();
+                                }
+                            }}
+                            role="button"
+                            tabIndex={0}
+                        >
+                            {showPhoto ? (
+                                <img
+                                    src={pic}
+                                    className="profile-pic"
+                                    alt=""
+                                />
+                            ) : (
+                                <div className="profile-avatar-initials" aria-hidden="true">
+                                    {initialsFromName(displayNameForInitials)}
+                                </div>
+                            )}
+                        </div>
                         <input
                             id="picUpload"
                             type="file"
@@ -263,7 +376,7 @@ function Profile() {
 
                     <div className="mb-4 text-start">
                         <label>Family-Oriented?</label>
-                        <ToggleGroup options={["Yes", "No"]} value={profile.familyOriented} onChange={(v) => updateProfile("familyOriented", v)} />
+                        <ToggleGroup options={["Yes", "No", "No preference"]} value={profile.familyOriented} onChange={(v) => updateProfile("familyOriented", v)} />
                     </div>
 
                     <h5 className="section-title">Lifestyle &amp; Habits</h5>
@@ -379,7 +492,7 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Do you have or want children?</label>
-                        <ToggleGroup options={["Have kids", "Want kids", "Don't want kids", "Open"]} value={profile.children} onChange={(v) => updateProfile("children", v)} />
+                        <ToggleGroup options={["Have kids", "Want kids", "Don't want kids", "Open", "No preference"]} value={profile.children} onChange={(v) => updateProfile("children", v)} />
                     </div>
 
                     <div className="mb-4 text-start">
@@ -435,7 +548,7 @@ function Profile() {
                     <div className="mb-3 text-start">
                         <label>Religion Preference</label>
                         <select className="form-select" value={preferences.religionPref} onChange={(e) => updatePref("religionPref", e.target.value)}>
-                            <option value="">No preference</option>
+                            <option value="">Open to all religions</option>
                             <option>Atheist</option>
                             <option>Agnostic</option>
                             <option>Buddhist</option>
@@ -452,7 +565,7 @@ function Profile() {
                     <div className="mb-3 text-start">
                         <label>Ethnicity Preference</label>
                         <select className="form-select" value={preferences.ethnicityPref} onChange={(e) => updatePref("ethnicityPref", e.target.value)}>
-                            <option value="">No preference</option>
+                            <option value="">Open to all ethnicities</option>
                             <option>Asian</option>
                             <option>Black / African American</option>
                             <option>Hispanic / Latino</option>
@@ -467,7 +580,7 @@ function Profile() {
                     <div className="mb-3 text-start">
                         <label>Political Preference</label>
                         <select className="form-select" value={preferences.politicalPref} onChange={(e) => updatePref("politicalPref", e.target.value)}>
-                            <option value="">No preference</option>
+                            <option value="">Open to all political leanings</option>
                             <option>Very Liberal</option>
                             <option>Liberal</option>
                             <option>Moderate</option>
@@ -479,12 +592,17 @@ function Profile() {
 
                     <div className="mb-3 text-start">
                         <label>Children Preference</label>
-                        <ToggleGroup options={["Have kids", "Want kids", "Don't want kids", "No preference"]} value={preferences.childrenPref} onChange={(v) => updatePref("childrenPref", v)} />
+                        <ToggleGroup options={["Have kids", "Want kids", "Don't want kids", "Open", "No preference"]} value={preferences.childrenPref} onChange={(v) => updatePref("childrenPref", v)} />
                     </div>
 
                     <div className="mb-3 text-start">
                         <label>Activity Level Preference</label>
                         <ToggleGroup options={["Low", "Medium", "High", "No preference"]} value={preferences.activityPref} onChange={(v) => updatePref("activityPref", v)} />
+                    </div>
+
+                    <div className="mb-3 text-start">
+                        <label>Family-oriented preference</label>
+                        <ToggleGroup options={["Yes", "No", "No preference"]} value={preferences.familyOrientedPref} onChange={(v) => updatePref("familyOrientedPref", v)} />
                     </div>
 
                     <div className="mb-4 text-start">

@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+const { normalizePreferredGenderIds } = require("../matching/preferredGenderIds");
 
 async function getUserById(userId) {
     const userResult = await pool.query(
@@ -20,6 +21,7 @@ async function getUserById(userId) {
             ts.internal_score         AS trust_score,
             ph.photo_url              AS profile_photo_url,
             rt.religion_name,
+            et.ethnicity_name,
             sm.smoking_name,
             dr.drinking_name,
             di.diet_name,
@@ -58,6 +60,7 @@ async function getUserById(userId) {
         LEFT JOIN trust_score      ts ON ts.user_id              = u.user_id
         LEFT JOIN photo            ph ON ph.user_id              = u.user_id AND ph.is_primary = true
         LEFT JOIN religion_type    rt ON rt.religion_type_id     = u.religion_id
+        LEFT JOIN ethnicity_type   et ON et.ethnicity_type_id    = u.ethnicity_id
         LEFT JOIN smoking          sm ON sm.smoking_id           = u.smoking_id
         LEFT JOIN drinking         dr ON dr.drinking_id          = u.drinking_id
         LEFT JOIN diet             di ON di.diet_id              = u.diet_id
@@ -106,15 +109,31 @@ async function getUserById(userId) {
             p.preferred_astrology_sign,
             p.preferred_want_children,
             p.preferred_political_affil,
-            array_agg(pg.gender_type_id) FILTER (WHERE pg.gender_type_id IS NOT NULL) AS preferred_genders
+            p.preferred_ethnicity_id,
+            rt_pref.religion_name AS preferred_religion_label,
+            et_pref.ethnicity_name AS preferred_ethnicity_label,
+            dg_pref.dating_goal_name AS preferred_dating_goals_label,
+            wc_pref.want_children AS preferred_want_children_label,
+            pa_pref.political_affil AS preferred_political_label,
+            fo_pref.family_oriented_name AS preferred_family_oriented_label,
+            (SELECT array_agg(pg.gender_type_id) FILTER (WHERE pg.gender_type_id IS NOT NULL)
+               FROM preference_genders pg WHERE pg.preference_id = p.preference_id) AS preferred_genders
         FROM preferences p
-        LEFT JOIN preference_genders pg ON pg.preference_id = p.preference_id
-        WHERE p.user_id = $1
-        GROUP BY p.preference_id`,
+        LEFT JOIN religion_type   rt_pref ON rt_pref.religion_type_id     = p.preferred_religion_type_id
+        LEFT JOIN ethnicity_type  et_pref ON et_pref.ethnicity_type_id    = p.preferred_ethnicity_id
+        LEFT JOIN dating_goals    dg_pref ON dg_pref.dating_goals_id      = p.preferred_dating_goals
+        LEFT JOIN want_children   wc_pref ON wc_pref.want_children_id     = p.preferred_want_children
+        LEFT JOIN political_affil pa_pref ON pa_pref.political_affil_id   = p.preferred_political_affil
+        LEFT JOIN family_oriented fo_pref ON fo_pref.family_oriented_id   = p.preferred_family_oriented
+        WHERE p.user_id = $1`,
         [userId]
     );
 
-    user.preferences = prefResult.rows[0] || null;
+    const prefs = prefResult.rows[0] || null;
+    if (prefs) {
+        prefs.preferred_genders = normalizePreferredGenderIds(prefs.preferred_genders);
+    }
+    user.preferences = prefs;
     return user;
 }
 
@@ -138,6 +157,7 @@ async function getCandidates(excludeUserId) {
             ts.internal_score         AS trust_score,
             ph.photo_url              AS profile_photo_url,
             rt.religion_name,
+            et.ethnicity_name,
             sm.smoking_name,
             dr.drinking_name,
             di.diet_name,
@@ -177,6 +197,7 @@ async function getCandidates(excludeUserId) {
         LEFT JOIN trust_score      ts ON ts.user_id              = u.user_id
         LEFT JOIN photo            ph ON ph.user_id              = u.user_id AND ph.is_primary = true
         LEFT JOIN religion_type    rt ON rt.religion_type_id     = u.religion_id
+        LEFT JOIN ethnicity_type   et ON et.ethnicity_type_id    = u.ethnicity_id
         LEFT JOIN smoking          sm ON sm.smoking_id           = u.smoking_id
         LEFT JOIN drinking         dr ON dr.drinking_id          = u.drinking_id
         LEFT JOIN diet             di ON di.diet_id              = u.diet_id

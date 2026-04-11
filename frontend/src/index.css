@@ -1079,7 +1079,6 @@
     opacity: 0.75;
 }
 
-/* Match overlay — "It's a match!" flash */
 .match-overlay {
     position: fixed;
     inset: 0;
@@ -1103,7 +1102,6 @@
     margin-top: 12px;
 }
 
-/* Pill tag */
 .match-pill {
     background: #fdf0f0;
     color: #a8001c;
@@ -1114,7 +1112,6 @@
     white-space: nowrap;
 }
 
-/* Info row (icon + text) */
 .info-row {
     display: flex;
     gap: 8px;
@@ -1131,7 +1128,6 @@
     color: #444;
 }
 
-/* Match card */
 .match-card {
     background: white;
     border-radius: 24px;
@@ -1243,7 +1239,6 @@
     padding: 10px 16px 22px;
 }
 
-/* Action buttons */
 .btn-reject {
     width: 62px;
     height: 62px;
@@ -1373,13 +1368,39 @@
     white-space: nowrap;
 }
 
-/* ─── Profile Page ───────────────────────────────────────────────────────── */
+
+.profile-loading {
+    padding: 2rem 2.5rem;
+    background: linear-gradient(to bottom, #c94b5b, #f2e6e6);
+    border-radius: 20px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+    font-size: 1.1rem;
+    color: #333;
+}
+
+.profile-avatar-shell {
+    width: 70%;
+    margin-left: auto;
+    margin-right: auto;
+    margin-top: 3rem;
+    margin-bottom: 1rem;
+    aspect-ratio: 1 / 1;
+    border-radius: 50%;
+    overflow: hidden;
+    cursor: pointer;
+    background: #f2e6e6;
+}
+
+.profile-avatar-shell:focus {
+    outline: 2px solid #a8001c;
+    outline-offset: 2px;
+}
 
 .profile-pic {
-    width: 70%;
-    aspect-ratio: 1 / 1;
+    width: 100%;
+    height: 100%;
     object-fit: cover;
-    cursor: pointer;
+    display: block;
 }
 
 .profile-pic-input {
@@ -1388,6 +1409,19 @@
 
 .location-hint {
     font-size: 12px;
+}
+
+.profile-avatar-initials {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #a8001c;
+    color: #fff;
+    font-size: clamp(1.5rem, 8vw, 2.75rem);
+    font-weight: 700;
+    letter-spacing: 0.02em;
 }
 
 .profile-photo-wrap {

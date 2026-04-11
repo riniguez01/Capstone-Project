@@ -1,18 +1,18 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useUser } from "../context/UserContext";
-
-const API = "http://localhost:4000";
+import { API_BASE_URL } from "../config/api";
 
 function Navbar() {
     const { currentUser, token } = useUser();
+    const userId = currentUser?.user_id;
     const [menuOpen,  setMenuOpen]  = useState(false);
     const [notifOpen, setNotifOpen] = useState(false);
     const [notifications, setNotifications] = useState([]);
     const [unread, setUnread] = useState(0);
 
-    const fetchNotifications = () => {
-        if (!currentUser || !token) return;
-        fetch(`${API}/dates/notifications/${currentUser.user_id}`, {
+    const fetchNotifications = useCallback(() => {
+        if (!userId || !token) return;
+        fetch(`${API_BASE_URL}/dates/notifications/${userId}`, {
             headers: { Authorization: `Bearer ${token}` },
         })
             .then(r => r.json())
@@ -23,23 +23,24 @@ function Navbar() {
                 }
             })
             .catch(() => {});
-    };
+    }, [userId, token]);
 
     useEffect(() => {
+        if (!userId || !token) return;
         fetchNotifications();
         const interval = setInterval(fetchNotifications, 60000);
         return () => clearInterval(interval);
-    }, [currentUser, token]);
+    }, [userId, token, fetchNotifications]);
 
     const handleRespond = async (scheduleId, response) => {
         try {
-            await fetch(`${API}/dates/${scheduleId}/respond`, {
+            await fetch(`${API_BASE_URL}/dates/${scheduleId}/respond`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${token}`,
                 },
-                body: JSON.stringify({ response, user_id: currentUser.user_id }),
+                body: JSON.stringify({ response, user_id: userId }),
             });
             fetchNotifications();
         } catch (err) {

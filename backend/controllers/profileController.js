@@ -1,25 +1,26 @@
 const pool = require("../config/db");
+const { ni } = require("../utils/pgCoerce");
 
-const GENDER         = { "Male": 2, "Man": 2, "Female": 3, "Woman": 3, "Non-binary": 4 };
-const RELIGION       = { "No preference": 1, "Atheist": 2, "Agnostic": 3, "Buddhist": 4, "Catholic": 5, "Christian": 6, "Hindu": 7, "Jewish": 8, "Mormon": 9, "Muslim": 10, "Spiritual (non-religious)": 11, "Other": 12, "Prefer not to say": 13 };
-const ETHNICITY      = { "No preference": 1, "Asian": 2, "Black / African American": 3, "Hispanic / Latino": 4, "Middle Eastern": 5, "Native American": 6, "Pacific Islander": 7, "White / Caucasian": 8, "Multiracial": 9, "Other": 10, "Prefer not to say": 11 };
-const EDUCATION      = { "No preference": 1, "High School": 2, "Some College": 3, "Associate's Degree": 4, "Bachelor's Degree": 5, "Master's Degree": 6, "Doctorate / PhD": 7, "Trade / Vocational": 8, "Trade": 8, "Other": 9 };
-const FAMILY         = { "No preference": 1, "Yes": 2, "No": 3 };
+const GENDER         = { "Male": 1, "Man": 1, "Female": 2, "Woman": 2, "Non-binary": 3 };
+const RELIGION       = { "Atheist": 1, "Agnostic": 2, "Buddhist": 3, "Catholic": 4, "Christian": 5, "Hindu": 6, "Jewish": 7, "Mormon": 8, "Muslim": 9, "Spiritual (non-religious)": 10, "Other": 11, "Prefer not to say": 12, "No preference": 13 };
+const ETHNICITY      = { "Asian": 1, "Black / African American": 2, "Hispanic / Latino": 3, "Middle Eastern": 4, "Native American": 5, "Pacific Islander": 6, "White / Caucasian": 7, "Multiracial": 8, "Other": 9, "Prefer not to say": 10, "No preference": 11 };
+const EDUCATION      = { "High School": 1, "Some College": 2, "Associate's Degree": 3, "Bachelor's Degree": 4, "Master's Degree": 5, "Doctorate / PhD": 6, "Trade / Vocational": 7, "Trade": 7, "Other": 8, "No preference": 9 };
+const FAMILY         = { "Yes": 1, "No": 2, "No preference": 3 };
 const SMOKING        = { "Yes": 1, "No": 2, "Occasionally": 3 };
 const DRINKING       = { "Yes": 1, "No": 2, "Social": 3 };
 const COFFEE         = { "Yes": 1, "No": 2 };
 const DIET           = { "Omnivore": 1, "Vegetarian": 2, "Vegan": 3, "Other": 4 };
-const ACTIVITY       = { "No preference": 1, "Low": 2, "Medium": 3, "High": 4 };
+const ACTIVITY       = { "Low": 1, "Medium": 2, "High": 3, "No preference": 4 };
 const MUSIC          = { "Pop": 1, "Hip-Hop / Rap": 2, "R&B / Soul": 3, "Rock": 4, "Country": 5, "Electronic / EDM": 6, "Jazz / Blues": 7, "Classical": 8, "Latin": 9, "Everything": 10, "Other": 11 };
 const GAMER          = { "Yes": 1, "No": 2, "Casual": 3 };
 const READER         = { "Yes": 1, "No": 2, "Occasionally": 3 };
 const TRAVEL         = { "Love it": 1, "Occasionally": 2, "Not really": 3 };
 const PETS           = { "Love animals": 1, "Have pets": 2, "Allergic": 3, "Not a fan": 4, "Neutral": 5 };
 const PERSONALITY    = { "Introvert": 1, "Extrovert": 2, "Ambivert": 3 };
-const DATING_GOALS   = { "No preference": 1, "Casual": 2, "Serious": 3, "Long-term": 4 };
+const DATING_GOALS   = { "Casual": 1, "Serious": 2, "Long-term": 3, "No preference": 4 };
 const ASTROLOGY      = { "Aries": 1, "Taurus": 2, "Gemini": 3, "Cancer": 4, "Leo": 5, "Virgo": 6, "Libra": 7, "Scorpio": 8, "Sagittarius": 9, "Capricorn": 10, "Aquarius": 11, "Pisces": 12 };
-const CHILDREN       = { "No preference": 1, "Want kids": 2, "Have kids": 3, "Don't want kids": 4, "Open": 5 };
-const POLITICAL      = { "No preference": 1, "Very Liberal": 2, "Liberal": 3, "Moderate": 4, "Conservative": 5, "Very Conservative": 6, "Apolitical": 7, "Prefer not to say": 8 };
+const CHILDREN       = { "Want kids": 1, "Have kids": 2, "Don't want kids": 3, "Open": 4, "No preference": 5 };
+const POLITICAL      = { "Very Liberal": 1, "Liberal": 2, "Moderate": 3, "Conservative": 4, "Very Conservative": 5, "Apolitical": 6, "Prefer not to say": 7, "No preference": 8 };
 
 function toId(map, label) {
     if (!label || label === "") return null;
@@ -114,10 +115,11 @@ exports.savePreferences = async (req, res) => {
     const {
         genderPref, minAge, maxAge, minHeight, maxHeight,
         religionPref, ethnicityPref, politicalPref, childrenPref, datingGoalPref,
+        activityPref, familyOrientedPref,
     } = req.body;
 
     try {
-        const genderMap = { "Male": 2, "Man": 2, "Female": 3, "Woman": 3, "Non-binary": 4 };
+        const genderMap = { "Male": 1, "Man": 1, "Female": 2, "Woman": 2, "Non-binary": 3 };
         const preferred_gender = (genderPref && genderPref !== "No preference")
             ? (genderMap[genderPref] || null) : null;
 
@@ -127,8 +129,8 @@ exports.savePreferences = async (req, res) => {
                  preferred_height_min, preferred_height_max,
                  preferred_religion_type_id, preferred_ethnicity_id,
                  preferred_political_affil, preferred_want_children,
-                 preferred_dating_goals)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                 preferred_dating_goals, preferred_activity_level, preferred_family_oriented)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
              ON CONFLICT (user_id) DO UPDATE SET
                 preferred_age_min           = EXCLUDED.preferred_age_min,
                 preferred_age_max           = EXCLUDED.preferred_age_max,
@@ -138,7 +140,9 @@ exports.savePreferences = async (req, res) => {
                 preferred_ethnicity_id      = EXCLUDED.preferred_ethnicity_id,
                 preferred_political_affil   = EXCLUDED.preferred_political_affil,
                 preferred_want_children     = EXCLUDED.preferred_want_children,
-                preferred_dating_goals      = EXCLUDED.preferred_dating_goals
+                preferred_dating_goals      = EXCLUDED.preferred_dating_goals,
+                preferred_activity_level    = EXCLUDED.preferred_activity_level,
+                preferred_family_oriented   = EXCLUDED.preferred_family_oriented
              RETURNING preference_id`,
             [
                 user_id,
@@ -151,6 +155,8 @@ exports.savePreferences = async (req, res) => {
                 toId(POLITICAL,    politicalPref),
                 toId(CHILDREN,     childrenPref),
                 toId(DATING_GOALS, datingGoalPref),
+                toId(ACTIVITY, activityPref),
+                toId(FAMILY, familyOrientedPref),
             ]
         );
 
@@ -183,17 +189,24 @@ exports.getPreferences = async (req, res) => {
                 p.preferred_height_max,
                 p.preferred_religion_type_id,
                 p.preferred_ethnicity_id,
+                rt_pref.religion_name AS preferred_religion_label,
+                et_pref.ethnicity_name AS preferred_ethnicity_label,
                 dg.dating_goal_name   AS preferred_dating_goal,
                 wc.want_children      AS preferred_children,
                 po.political_affil    AS preferred_political,
-                array_agg(pg.gender_type_id) FILTER (WHERE pg.gender_type_id IS NOT NULL) AS preferred_gender_ids
+                al.activity_name      AS preferred_activity,
+                fo.family_oriented_name AS preferred_family,
+                (SELECT array_agg(pg.gender_type_id) FILTER (WHERE pg.gender_type_id IS NOT NULL)
+                   FROM preference_genders pg WHERE pg.preference_id = p.preference_id) AS preferred_gender_ids
              FROM preferences p
+             LEFT JOIN religion_type   rt_pref ON rt_pref.religion_type_id = p.preferred_religion_type_id
+             LEFT JOIN ethnicity_type  et_pref ON et_pref.ethnicity_type_id = p.preferred_ethnicity_id
              LEFT JOIN dating_goals    dg ON dg.dating_goals_id    = p.preferred_dating_goals
              LEFT JOIN want_children   wc ON wc.want_children_id   = p.preferred_want_children
              LEFT JOIN political_affil po ON po.political_affil_id = p.preferred_political_affil
-             LEFT JOIN preference_genders pg ON pg.preference_id   = p.preference_id
-             WHERE p.user_id = $1
-             GROUP BY p.preference_id, dg.dating_goal_name, wc.want_children, po.political_affil`,
+             LEFT JOIN activity_level  al ON al.activity_level_id  = p.preferred_activity_level
+             LEFT JOIN family_oriented fo ON fo.family_oriented_id = p.preferred_family_oriented
+             WHERE p.user_id = $1`,
             [user_id]
         );
 
@@ -202,11 +215,32 @@ exports.getPreferences = async (req, res) => {
         }
 
         const row = result.rows[0];
-        const genderIdMap   = { 2: "Male", 3: "Female", 4: "Non-binary" };
-        const religionIdMap = { 1: "No preference", 2: "Atheist", 3: "Agnostic", 4: "Buddhist", 5: "Catholic", 6: "Christian", 7: "Hindu", 8: "Jewish", 9: "Mormon", 10: "Muslim", 11: "Spiritual (non-religious)", 12: "Other", 13: "Prefer not to say" };
-        const ethnicityIdMap = { 1: "No preference", 2: "Asian", 3: "Black / African American", 4: "Hispanic / Latino", 5: "Middle Eastern", 6: "Native American", 7: "Pacific Islander", 8: "White / Caucasian", 9: "Multiracial", 10: "Other", 11: "Prefer not to say" };
-        const genderIds     = row.preferred_gender_ids || [];
-        const genderPref    = genderIds.length > 0 ? (genderIdMap[genderIds[0]] || "No preference") : "No preference";
+
+        /** Profile.jsx partner <select>s use value="" for open; DB uses lookup label "No preference". */
+        function partnerSelectOpenLabel(label) {
+            if (label == null || label === "" || label === "No preference") return "";
+            return label;
+        }
+
+        /** Partner ToggleGroups use "No preference" as explicit value when nothing chosen. */
+        function partnerToggleLabel(label) {
+            if (label == null || label === "") return "No preference";
+            return label;
+        }
+
+        // seed_data: 1 Man, 2 Woman, 3 Non-binary, 4 Other, 5 Prefer not to say; v4: 6 Open to all
+        const genderIdMap = {
+            1: "Male",
+            2: "Female",
+            3: "Non-binary",
+            4: "No preference",
+            5: "No preference",
+            6: "No preference",
+        };
+        const genderIds = row.preferred_gender_ids || [];
+        const firstGid  = genderIds.length > 0 ? ni(genderIds[0]) : null;
+        const genderPref =
+            firstGid !== null ? (genderIdMap[firstGid] || "No preference") : "No preference";
 
         res.json({
             preferences: {
@@ -215,11 +249,13 @@ exports.getPreferences = async (req, res) => {
                 maxAge:         row.preferred_age_max    || 100,
                 minHeight:      row.preferred_height_min || 60,
                 maxHeight:      row.preferred_height_max || 80,
-                religionPref:   religionIdMap[row.preferred_religion_type_id] || "",
-                ethnicityPref:  ethnicityIdMap[row.preferred_ethnicity_id]    || "",
-                datingGoalPref: row.preferred_dating_goal || "",
-                childrenPref:   row.preferred_children    || "",
-                politicalPref:  row.preferred_political   || "",
+                religionPref:   partnerSelectOpenLabel(row.preferred_religion_label),
+                ethnicityPref:  partnerSelectOpenLabel(row.preferred_ethnicity_label),
+                politicalPref:  partnerSelectOpenLabel(row.preferred_political),
+                datingGoalPref: partnerToggleLabel(row.preferred_dating_goal),
+                childrenPref:   partnerToggleLabel(row.preferred_children),
+                activityPref:   partnerToggleLabel(row.preferred_activity),
+                familyOrientedPref: partnerToggleLabel(row.preferred_family),
             }
         });
     } catch (err) {

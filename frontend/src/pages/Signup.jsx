@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "../context/UserContext";
+import { API_BASE_URL } from "../config/api";
 
 function Signup() {
     const navigate = useNavigate();
@@ -49,7 +50,7 @@ function Signup() {
         setLoading(true);
 
         try {
-            const res = await fetch("https://aura-backend-ysqh.onrender.com/auth/signup", {
+            const res = await fetch(`${API_BASE_URL}/auth/signup`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ firstName, lastName, location, age, email, password }),

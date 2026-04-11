@@ -1,4 +1,15 @@
+const { ni } = require("../utils/pgCoerce");
+const { normalizePreferredGenderIds } = require("./preferredGenderIds");
+
 const TRUST_ELIMINATION_THRESHOLD = 40;
+
+function normalizeGenderIdList(raw) {
+    return normalizePreferredGenderIds(raw);
+}
+
+function partnerFieldOpen(label) {
+    return label == null || label === "" || label === "No preference";
+}
 
 function getAge(dateOfBirth) {
     if (!dateOfBirth) return null;
@@ -30,42 +41,54 @@ function milesBetween(lat1, lon1, lat2, lon2) {
 }
 
 function genderMatch(user, candidate) {
-    const preferred = user.preferences?.preferred_genders || [];
+    const preferred = normalizeGenderIdList(user.preferences?.preferred_genders);
     if (preferred.length === 0) return true;
-    return preferred.includes(candidate.gender_identity);
+    const cg = ni(candidate.gender_identity);
+    if (cg === null) return false;
+    return preferred.includes(cg);
 }
 
 function mutualGenderMatch(user, candidate) {
     if (!genderMatch(user, candidate)) return false;
-    const candidatePreferred = candidate.preferences?.preferred_genders || [];
+    const candidatePreferred = normalizeGenderIdList(candidate.preferences?.preferred_genders);
     if (candidatePreferred.length === 0) return true;
-    return candidatePreferred.includes(user.gender_identity);
+    const ug = ni(user.gender_identity);
+    if (ug === null) return false;
+    return candidatePreferred.includes(ug);
 }
 
-function datingGoalsCompatible(userGoal, candidateGoal) {
-    if (!userGoal || !candidateGoal) return true;
-    if (userGoal === candidateGoal) return true;
-    const longTermGroup = [2, 3];
-    if (longTermGroup.includes(userGoal) && longTermGroup.includes(candidateGoal)) return true;
+function datingGoalsCompatible(uGoal, cGoal, uName, cName) {
+    if (uName === "No preference" || cName === "No preference") return true;
+    const u = ni(uGoal);
+    const c = ni(cGoal);
+    if (u === null || c === null) return true;
+    if (u === c) return true;
+    const seriousGroup = [2, 3];
+    if (seriousGroup.includes(u) && seriousGroup.includes(c)) return true;
     return false;
 }
 
-function childrenCompatible(userChildren, candidateChildren) {
-    if (!userChildren || !candidateChildren) return true;
-    if (userChildren === 4 || candidateChildren === 4) return true;
-    if ((userChildren === 1 && candidateChildren === 3) ||
-        (userChildren === 3 && candidateChildren === 1)) return false;
+/** Pairwise want-children compatibility using lookup ids + labels (ids differ per DB seed order). */
+function wantChildrenPairCompatible(aId, bId, aLabel, bLabel) {
+    if (aLabel === "No preference" || bLabel === "No preference") return true;
+    const u = ni(aId);
+    const c = ni(bId);
+    if (u === null || c === null) return true;
+    if (u === c) return true;
+    if (u === 4 || c === 4) return true;
+    if ((u === 1 && c === 3) || (u === 3 && c === 1)) return false;
+    if ((u === 2 && c === 3) || (u === 3 && c === 2)) return false;
     return true;
 }
 
 function distanceCompatible(user, candidate, prefs) {
-    const min = prefs?.min_distance_miles;
-    const max = prefs?.max_distance_miles;
-    if ((min === null || min === undefined) && (max === null || max === undefined)) return true;
+    const min = ni(prefs?.min_distance_miles);
+    const max = ni(prefs?.max_distance_miles);
+    if (min === null && max === null) return true;
     const dist = milesBetween(user.latitude, user.longitude, candidate.latitude, candidate.longitude);
     if (dist === null) return true;
-    if (min !== null && min !== undefined && dist < min) return false;
-    if (max !== null && max !== undefined && dist > max) return false;
+    if (min !== null && dist < min) return false;
+    if (max !== null && dist > max) return false;
     return true;
 }
 
@@ -74,55 +97,83 @@ module.exports = function filterMatches(user, candidates) {
 
     return candidates.filter(candidate => {
 
-        if (candidate.trust_score !== null &&
-            candidate.trust_score !== undefined &&
-            candidate.trust_score <= TRUST_ELIMINATION_THRESHOLD) {
+        const trust = ni(candidate.trust_score);
+        if (trust !== null && trust <= TRUST_ELIMINATION_THRESHOLD) {
             return false;
         }
 
-        if (candidate.account_status !== 'active') return false;
+        if (candidate.account_status !== "active") return false;
+
+        if (!mutualGenderMatch(user, candidate)) return false;
 
         if (!prefs) return true;
 
         const candidateAge = getAge(candidate.date_of_birth);
-        if (prefs.preferred_age_min && candidateAge !== null) {
-            if (candidateAge < prefs.preferred_age_min) return false;
-        }
-        if (prefs.preferred_age_max && candidateAge !== null) {
-            if (candidateAge > prefs.preferred_age_max) return false;
+        const ageMin = ni(prefs.preferred_age_min);
+        const ageMax = ni(prefs.preferred_age_max);
+        if (ageMin !== null && candidateAge !== null && candidateAge < ageMin) return false;
+        if (ageMax !== null && candidateAge !== null && candidateAge > ageMax) return false;
+
+        const hMin = ni(prefs.preferred_height_min);
+        const hMax = ni(prefs.preferred_height_max);
+        const ch = ni(candidate.height_inches);
+        if (hMin !== null && ch !== null && ch < hMin) return false;
+        if (hMax !== null && ch !== null && ch > hMax) return false;
+
+        if (!partnerFieldOpen(prefs.preferred_religion_label)) {
+            const prefRel = ni(prefs.preferred_religion_type_id);
+            const cr = ni(candidate.religion_id);
+            if (cr === null || cr !== prefRel) return false;
         }
 
-        if (!mutualGenderMatch(user, candidate)) return false;
-
-        if (prefs.preferred_height_min && candidate.height_inches !== null && candidate.height_inches !== undefined) {
-            if (candidate.height_inches < prefs.preferred_height_min) return false;
-        }
-        if (prefs.preferred_height_max && candidate.height_inches !== null && candidate.height_inches !== undefined) {
-            if (candidate.height_inches > prefs.preferred_height_max) return false;
+        if (!partnerFieldOpen(prefs.preferred_political_label)) {
+            const prefPol = ni(prefs.preferred_political_affil);
+            const cp = ni(candidate.political);
+            if (cp === null || cp !== prefPol) return false;
         }
 
-        if (prefs.preferred_religion_type_id && prefs.preferred_religion_type_id !== 1) {
-            if (!candidate.religion_id || candidate.religion_id !== prefs.preferred_religion_type_id) return false;
+        if (!partnerFieldOpen(prefs.preferred_ethnicity_label)) {
+            const prefEth = ni(prefs.preferred_ethnicity_id);
+            const ce = ni(candidate.ethnicity_id);
+            if (ce === null || ce !== prefEth) return false;
         }
 
-        if (prefs.preferred_political_affil && prefs.preferred_political_affil !== 1) {
-            if (!candidate.political || candidate.political !== prefs.preferred_political_affil) return false;
-        }
-
-        if (prefs.preferred_ethnicity_id && prefs.preferred_ethnicity_id !== 1) {
-            if (!candidate.ethnicity_id || candidate.ethnicity_id !== prefs.preferred_ethnicity_id) return false;
-        }
-
-        if (prefs.preferred_dating_goals && prefs.preferred_dating_goals !== 1) {
-            if (!datingGoalsCompatible(prefs.preferred_dating_goals, candidate.dating_goals)) return false;
+        if (!partnerFieldOpen(prefs.preferred_dating_goals_label)) {
+            if (!datingGoalsCompatible(
+                prefs.preferred_dating_goals,
+                candidate.dating_goals,
+                prefs.preferred_dating_goals_label,
+                candidate.dating_goals_name
+            )) return false;
         } else {
-            if (!datingGoalsCompatible(user.dating_goals, candidate.dating_goals)) return false;
+            if (!datingGoalsCompatible(
+                user.dating_goals,
+                candidate.dating_goals,
+                user.dating_goals_name,
+                candidate.dating_goals_name
+            )) return false;
         }
 
-        if (prefs.preferred_want_children && prefs.preferred_want_children !== 1) {
-            if (!childrenCompatible(prefs.preferred_want_children, candidate.children)) return false;
+        if (!partnerFieldOpen(prefs.preferred_want_children_label)) {
+            if (!wantChildrenPairCompatible(
+                prefs.preferred_want_children,
+                candidate.children,
+                prefs.preferred_want_children_label,
+                candidate.children_name
+            )) return false;
         } else {
-            if (!childrenCompatible(user.children, candidate.children)) return false;
+            if (!wantChildrenPairCompatible(
+                user.children,
+                candidate.children,
+                user.children_name,
+                candidate.children_name
+            )) return false;
+        }
+
+        if (!partnerFieldOpen(prefs.preferred_family_oriented_label)) {
+            const prefFam = ni(prefs.preferred_family_oriented);
+            const cf = ni(candidate.family_oriented);
+            if (cf === null || cf !== prefFam) return false;
         }
 
         if (!distanceCompatible(user, candidate, prefs)) return false;

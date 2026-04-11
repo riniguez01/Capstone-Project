@@ -59,7 +59,8 @@ function scoreValuesAndRelationship(userA, userB) {
     const political = ordinal3(userA.political, userB.political);
     const datingGoals = eq(userA.dating_goals, userB.dating_goals);
     const children = eq(userA.children, userB.children);
-    return clamp01(avg([religion, familyOriented, political, datingGoals, children]));
+    const education = eq(userA.education_career_id, userB.education_career_id);
+    return clamp01(avg([religion, familyOriented, political, datingGoals, children, education]));
 }
 
 module.exports = function scoreMatch(userA, userB) {

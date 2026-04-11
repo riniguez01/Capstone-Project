@@ -4,6 +4,14 @@ const pool = require("../config/db");
 
 const LIKE_LIMITS = { 1: 3, 2: 5 };
 
+/** Swipes / prefs must use the logged-in user from JWT — not :userId (stale client localStorage breaks matches). */
+function authedUserId(req) {
+    const raw = req.user && req.user.id;
+    if (raw === undefined || raw === null || raw === "") return null;
+    const n = parseInt(String(raw), 10);
+    return Number.isNaN(n) ? null : n;
+}
+
 function getAge(dateOfBirth) {
     if (!dateOfBirth) return null;
     const today = new Date();
@@ -52,8 +60,8 @@ exports.getAllCandidates = async (req, res) => {
 
 exports.getMatches = async (req, res) => {
     try {
-        const userId = parseInt(req.params.userId);
-        if (isNaN(userId)) return res.status(400).json({ error: "Invalid user ID" });
+        const userId = authedUserId(req);
+        if (userId == null) return res.status(401).json({ error: "Unauthorized" });
 
         const shouldRank = req.query.ranked !== "false";
         const user = await getUserById(userId);
@@ -63,18 +71,21 @@ exports.getMatches = async (req, res) => {
             `SELECT swiped_user_id FROM swipes WHERE swipe_user_id = $1`,
             [userId]
         );
-        const swipedIds = new Set(swipedResult.rows.map(r => r.swiped_user_id));
+        const swipedIds = new Set(
+            swipedResult.rows.map((r) => Number(r.swiped_user_id)).filter((id) => !Number.isNaN(id))
+        );
 
         const allCandidates = await getCandidates(userId);
-        const candidates = allCandidates.filter(c => !swipedIds.has(c.user_id));
-        const matches = await generateMatches(user, candidates, shouldRank);
+        const candidates = allCandidates.filter((c) => !swipedIds.has(Number(c.user_id)));
+        const { matches, candidateByUserId } = await generateMatches(user, candidates, shouldRank);
 
         const likesToday = await getLikesToday(userId);
         const tierLimit  = LIKE_LIMITS[user.tier_id] || 3;
         const likesLeft  = Math.max(0, tierLimit - likesToday);
 
         const fullMatches = matches.map(match => {
-            const c = candidates.find(c => c.user_id === match.user_id);
+            const mid = Number(match.user_id);
+            const c = candidateByUserId.get(String(mid));
             if (!c) return null;
 
             const avatarUrl = `https://ui-avatars.com/api/?background=c94b5b&color=fff&size=300&name=${encodeURIComponent((c.first_name || "") + "+" + (c.last_name || ""))}`;
@@ -130,11 +141,11 @@ exports.getMatches = async (req, res) => {
 
 exports.likeUser = async (req, res) => {
     try {
-        const userId      = parseInt(req.params.userId);
-        const likedUserId = parseInt(req.body.liked_user_id);
+        const userId      = authedUserId(req);
+        const likedUserId = parseInt(req.body.liked_user_id, 10);
 
-        if (isNaN(userId) || isNaN(likedUserId))
-            return res.status(400).json({ error: "Invalid user ID" });
+        if (userId == null) return res.status(401).json({ error: "Unauthorized" });
+        if (isNaN(likedUserId)) return res.status(400).json({ error: "Invalid user ID" });
         if (userId === likedUserId)
             return res.status(400).json({ error: "You cannot like yourself" });
 
@@ -203,8 +214,8 @@ exports.likeUser = async (req, res) => {
 
 exports.getMutualMatches = async (req, res) => {
     try {
-        const userId = parseInt(req.params.userId);
-        if (isNaN(userId)) return res.status(400).json({ error: "Invalid user ID" });
+        const userId = authedUserId(req);
+        if (userId == null) return res.status(401).json({ error: "Unauthorized" });
 
         const result = await pool.query(
             `SELECT
