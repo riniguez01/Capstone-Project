@@ -1,17 +1,9 @@
 import Navbar from "../components/Navbar";
-import StarRating from "../components/StarRating";
+import ShieldRating from "../components/ShieldRating";
 import { useUser } from "../context/UserContext";
 import { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import { API_BASE_URL } from "../config/api";
-
-function trustToStars(trustScore) {
-    if (trustScore === null || trustScore === undefined) return 3;
-    if (trustScore <= 40) return 1;
-    if (trustScore <= 55) return 2;
-    if (trustScore <= 70) return 3;
-    if (trustScore <= 85) return 4;
-    return 5;
-}
 
 function initialsFromName(name) {
     const parts = (name || "").trim().split(/\s+/).filter(Boolean);
@@ -79,13 +71,15 @@ function Profile() {
     } = useUser();
     const [saveError, setSaveError] = useState(null);
     const [saveSuccess, setSaveSuccess] = useState(false);
+    const [appealEligible, setAppealEligible] = useState(null);
     const pendingPhotoFileRef = useRef(null);
     const lastBlobUrlRef = useRef(null);
 
     const updateProfile = (field, value) => setProfile((prev) => ({ ...prev, [field]: value }));
     const updatePref = (field, value) => setPreferences((prev) => ({ ...prev, [field]: value }));
 
-    const starRating = trustToStars(profile.trustScore);
+    const td = profile.trustDisplay;
+    const shieldCount = td?.shield_count != null ? td.shield_count : null;
 
     const inchesToDisplay = (inches) => {
         const ft = Math.floor(inches / 12);
@@ -116,6 +110,22 @@ function Profile() {
     useEffect(() => () => {
         if (lastBlobUrlRef.current) URL.revokeObjectURL(lastBlobUrlRef.current);
     }, []);
+
+    useEffect(() => {
+        if (!token) return;
+        let cancelled = false;
+        fetch(`${API_BASE_URL}/appeals/eligibility`, {
+            headers: { Authorization: `Bearer ${token}` },
+        })
+            .then((r) => r.json())
+            .then((data) => {
+                if (!cancelled) setAppealEligible(data.eligible === true);
+            })
+            .catch(() => {
+                if (!cancelled) setAppealEligible(false);
+            });
+        return () => { cancelled = true; };
+    }, [token]);
 
     const handleSave = async () => {
         setSaveError(null);
@@ -283,8 +293,33 @@ function Profile() {
                         <div className="text-muted small mb-2 bi-camera profile-change-photo" onClick={() => document.getElementById("picUpload").click()}>
                             -Change Photo
                         </div>
-                        <div className="pb-2">
-                            <StarRating rating={starRating} />
+                        <div className="pb-2 text-center">
+                            <div className="small text-white-50 mb-1">Safety trust</div>
+                            <ShieldRating rating={td?.label === "New User" ? null : shieldCount} />
+                            <div className="small text-white mt-1 fw-semibold">
+                                {td?.label ?? "New User"}
+                            </div>
+                            {td?.dates_reviewed != null && (
+                                <div className="small text-white-50">
+                                    {td.dates_reviewed} date{td.dates_reviewed === 1 ? "" : "s"} reviewed
+                                </div>
+                            )}
+                            {td?.show_numeric && td?.public_trust_rating != null && (
+                                <div className="small text-white-50">
+                                    {td.public_trust_rating.toFixed(1)} · Safety-based rating
+                                </div>
+                            )}
+                            {td?.show_numeric && (
+                                <div className="small text-white-50 mt-1" style={{ maxWidth: 260, margin: "0 auto" }}>
+                                    Shields reflect a rolling average; one difficult date may not change the count.
+                                </div>
+                            )}
+                            <div className="small text-white-50 mt-2" style={{ maxWidth: 280, margin: "0 auto", lineHeight: 1.35 }}>
+                                If a date check-in affects your score, we&apos;ll notify you in the bell.
+                                {" "}
+                                <Link to="/appeals" className="text-white text-decoration-underline">Trust appeals</Link>
+                                {appealEligible === true ? " — you can submit one now." : " — available when eligible."}
+                            </div>
                         </div>
                     </div>
 
@@ -623,9 +658,9 @@ function Profile() {
                     )}
 
                     <div>
-                        <button className="btn btn-danger me-2 mb-2">
+                        <Link to="/aura-plus" className="btn btn-danger me-2 mb-2">
                             Get Aura +
-                        </button>
+                        </Link>
                     </div>
                     <div>
                         <button className="btn btn-outline-danger me-2" onClick={handleSave}>

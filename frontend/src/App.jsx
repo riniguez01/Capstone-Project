@@ -9,6 +9,8 @@ import DatePlanner from "./pages/DatePlanner";
 import PostDateSurvey from "./components/PostDateSurvey";
 import Preferences from "./pages/Preferences";
 import Notifications from "./pages/Notifications";
+import Appeal from "./pages/Appeal";
+import AuraPlus from "./pages/AuraPlus";
 
 function App() {
     return (
@@ -17,12 +19,14 @@ function App() {
             <Route path="/signup"       element={<Signup />} />
             <Route path="/preferences"  element={<Preferences />} />
             <Route path="/profile"      element={<Profile />} />
+            <Route path="/aura-plus"    element={<AuraPlus />} />
             <Route path="/questionnaire" element={<Questionnaire />} />
             <Route path="/matching"     element={<Matching />} />
             <Route path="/chat"         element={<Chat />} />
             <Route path="/dates"        element={<DatePlanner />} />
             <Route path="/postDate"     element={<PostDateSurvey />} />
             <Route path="/notifications" element={<Notifications />} />
+            <Route path="/appeals" element={<Appeal />} />
         </Routes>
     );
 }

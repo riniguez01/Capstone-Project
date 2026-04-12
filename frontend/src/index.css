@@ -882,6 +882,28 @@
     margin-top: 4px;
 }
 
+.notif-appeal-btn {
+    background: #a8001c !important;
+    color: #fff !important;
+    border: none !important;
+    font-weight: 600;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.notif-appeal-btn:hover {
+    background: #8a0018 !important;
+    color: #fff !important;
+}
+
+.appeal-form-text {
+    color: #1a1a1a !important;
+}
+
+.appeal-form .form-label {
+    color: #111;
+    font-weight: 600;
+}
+
 .match-page {
     display: flex;
     flex-direction: column;
@@ -908,6 +930,35 @@
     white-space: nowrap;
 }
 
+/* Safety shields: dark red fills (not Bootstrap blue) */
+.shield-rating {
+    display: inline-flex;
+    gap: 2px;
+    font-size: 0.95rem;
+    line-height: 1;
+    color: #b08088;
+}
+
+.shield-rating .bi-shield-fill {
+    color: #7a0015;
+}
+
+.shield-rating .bi-shield {
+    color: #a86872;
+    opacity: 0.85;
+}
+
+/* Dark photo overlay — filled shields read clearly */
+.shield-rating--on-dark .bi-shield-fill {
+    color: #c41e3a;
+    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.35));
+}
+
+.shield-rating--on-dark .bi-shield {
+    color: rgba(255, 255, 255, 0.55);
+    opacity: 1;
+}
+
 .match-like-alert {
     color: #fff;
     background: rgba(168, 0, 28, 0.85);
@@ -918,6 +969,42 @@
     width: 100%;
     text-align: center;
     font-size: 14px;
+}
+
+.aura-plus-hint {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.82);
+    text-align: center;
+    max-width: 400px;
+}
+
+.aura-plus-hint--quiet {
+    opacity: 0.9;
+    margin-bottom: 8px;
+}
+
+.aura-plus-hint__link {
+    color: #f5c6cf;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.aura-plus-hint__link:hover {
+    color: #fff;
+}
+
+.date-planner-card .aura-plus-hint {
+    color: #6c757d;
+    font-size: 0.875rem;
+}
+
+.date-planner-card .aura-plus-hint__link {
+    color: #a8001c;
+}
+
+.date-planner-card .aura-plus-hint__link:hover {
+    color: #7a0015;
 }
 
 .match-profile-image {
@@ -1070,6 +1157,26 @@
     background: rgba(0, 0, 0, 0.5);
     border-radius: 20px;
     padding: 3px 9px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+}
+
+.match-card__rating-badge--corner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 4px 8px;
+    border-radius: 12px;
+}
+
+.match-card__trust-label {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.9);
+    line-height: 1.1;
+    max-width: 96px;
+    text-align: right;
 }
 
 .match-card__body {

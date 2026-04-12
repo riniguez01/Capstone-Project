@@ -1,6 +1,7 @@
 const generateMatches = require("../services/matchingService");
 const { getUserById, getCandidates } = require("../services/userService");
 const pool = require("../config/db");
+const { trustLabelFromPublic, getTrustDisplayForUser, MIN_DATES_FOR_PUBLIC } = require("../services/trustService");
 
 const LIKE_LIMITS = { 1: 3, 2: 5 };
 
@@ -22,13 +23,35 @@ function getAge(dateOfBirth) {
     return age;
 }
 
-function trustToStars(trustScore) {
-    if (trustScore === null || trustScore === undefined) return 3;
-    if (trustScore <= 40) return 1;
-    if (trustScore <= 55) return 2;
-    if (trustScore <= 70) return 3;
-    if (trustScore <= 85) return 4;
-    return 5;
+/** Public safety shield count (1–5) + label; hidden until enough date feedback exists. */
+function publicTrustUi(candidate) {
+    const dates = Number(candidate.trust_dates_reviewed) || 0;
+    const pub = candidate.public_trust_rating != null
+        ? Number(candidate.public_trust_rating)
+        : null;
+    const t = trustLabelFromPublic(pub, dates);
+    return {
+        shield_rating: t.shield_count,
+        trust_label: t.label,
+        trust_dates_reviewed: dates,
+        public_trust_rating: t.show_numeric ? t.public_trust_rating : null,
+        safety_based_rating: true,
+    };
+}
+
+/** Shield fill count for cards — uses raw SQL trust + date count so we never drop fills when labels omit public rating. */
+function computeTrustShieldDisplay(td, fallback, c) {
+    const merged = td?.shield_count ?? fallback?.shield_rating;
+    if (merged != null && merged !== "") {
+        const n = Number(merged);
+        if (Number.isFinite(n) && n >= 1 && n <= 5) return Math.round(n);
+    }
+    const dates = Number(c.trust_dates_reviewed) || 0;
+    const pub = c.public_trust_rating != null ? Number(c.public_trust_rating) : null;
+    if (dates >= MIN_DATES_FOR_PUBLIC && pub != null && Number.isFinite(pub)) {
+        return Math.max(1, Math.min(5, Math.round(pub)));
+    }
+    return null;
 }
 
 function inchesToDisplay(inches) {
@@ -83,12 +106,41 @@ exports.getMatches = async (req, res) => {
         const tierLimit  = LIKE_LIMITS[user.tier_id] || 3;
         const likesLeft  = Math.max(0, tierLimit - likesToday);
 
-        const fullMatches = matches.map(match => {
+        const fullMatches = (await Promise.all(matches.map(async (match) => {
             const mid = Number(match.user_id);
             const c = candidateByUserId.get(String(mid));
             if (!c) return null;
 
             const avatarUrl = `https://ui-avatars.com/api/?background=c94b5b&color=fff&size=300&name=${encodeURIComponent((c.first_name || "") + "+" + (c.last_name || ""))}`;
+
+            const fallback = publicTrustUi(c);
+            let td;
+            try {
+                td = await getTrustDisplayForUser(mid);
+            } catch {
+                td = null;
+            }
+
+            const trust_label = td?.label ?? fallback.trust_label;
+            let shield_rating = td?.shield_count ?? fallback.shield_rating;
+            const trust_dates_reviewed = td?.dates_reviewed ?? fallback.trust_dates_reviewed;
+            const public_trust_rating =
+                td?.show_numeric && td.public_trust_rating != null
+                    ? td.public_trust_rating
+                    : fallback.public_trust_rating;
+
+            if (
+                (shield_rating == null || shield_rating === "")
+                && trust_label
+                && trust_label !== "New User"
+                && public_trust_rating != null
+                && Number.isFinite(Number(public_trust_rating))
+            ) {
+                const r = Number(public_trust_rating);
+                shield_rating = Math.max(1, Math.min(5, Math.round(r)));
+            }
+
+            const trust_shield_display = computeTrustShieldDisplay(td, fallback, c);
 
             return {
                 user_id:              c.user_id,
@@ -105,7 +157,13 @@ exports.getMatches = async (req, res) => {
                 location_state:       c.location_state       || null,
                 bio:                  c.bio                  || null,
                 image:                c.profile_photo_url    || avatarUrl,
-                starRating:           trustToStars(c.trust_score),
+                starRating:           shield_rating,
+                shield_rating,
+                trust_shield_display,
+                trust_label,
+                trust_dates_reviewed,
+                public_trust_rating,
+                safety_based_rating:  true,
                 religion_name:        c.religion_name        || null,
                 activity_name:        c.activity_name        || null,
                 children_name:        c.children_name        || null,
@@ -123,7 +181,8 @@ exports.getMatches = async (req, res) => {
                 trust_penalized:      match.trust_penalized,
                 breakdown:            match.breakdown,
             };
-        }).filter(Boolean);
+        })))
+            .filter(Boolean);
 
         res.json({
             user_id:       userId,
@@ -150,20 +209,27 @@ exports.likeUser = async (req, res) => {
             return res.status(400).json({ error: "You cannot like yourself" });
 
         const userResult = await pool.query(
-            "SELECT tier_id FROM users WHERE user_id = $1", [userId]
+            `SELECT tier_id, COALESCE(premium_suspended, false) AS premium_suspended
+             FROM users WHERE user_id = $1`,
+            [userId]
         );
         if (userResult.rows.length === 0)
             return res.status(404).json({ error: "User not found" });
 
-        const tierId     = userResult.rows[0].tier_id || 1;
+        let tierId = userResult.rows[0].tier_id || 1;
+        if (userResult.rows[0].premium_suspended) tierId = 1;
         const tierLimit  = LIKE_LIMITS[tierId] || 3;
         const likesToday = await getLikesToday(userId);
 
         if (likesToday >= tierLimit) {
-            return res.status(429).json({
+            const payload = {
                 error: "Daily like limit reached.",
-                likes_used: likesToday, tier_limit: tierLimit, resets_in: "24 hours",
-            });
+                likes_used: likesToday,
+                tier_limit: tierLimit,
+                resets_in: "24 hours",
+            };
+            if (tierId === 1) payload.upgrade_hint = "aura_plus";
+            return res.status(429).json(payload);
         }
 
         const existing = await pool.query(

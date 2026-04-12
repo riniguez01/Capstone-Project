@@ -1,9 +1,38 @@
 import Navbar from "../components/Navbar";
-import StarRating from "../components/StarRating";
+import AuraPlusHint from "../components/AuraPlusHint";
+import ShieldRating from "../components/ShieldRating";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "../context/UserContext";
 import { API_BASE_URL } from "../config/api";
+
+/** Prefer API `trust_shield_display`; else derive from legacy fields. */
+function matchCardShieldRating(user) {
+    if (!user) return null;
+    const tsd = user.trust_shield_display;
+    if (tsd != null && tsd !== "") {
+        const n = Number(tsd);
+        if (Number.isFinite(n) && n >= 1 && n <= 5) return Math.round(n);
+    }
+
+    const num = (v) => {
+        if (v == null || v === "") return null;
+        const x = Number(v);
+        return Number.isFinite(x) ? x : null;
+    };
+
+    const fromDirect = num(user.shield_rating ?? user.starRating);
+    if (fromDirect != null && fromDirect >= 1 && fromDirect <= 5) {
+        return Math.round(fromDirect);
+    }
+
+    const fromPub = num(user.public_trust_rating);
+    if (fromPub != null) {
+        return Math.max(1, Math.min(5, Math.round(fromPub)));
+    }
+
+    return null;
+}
 
 function Pill({ label }) {
     if (!label) return null;
@@ -49,8 +78,8 @@ function MatchCard({ user, onHeart, onReject, likesLeft, heartPending, swipeHear
                         <div className="match-card__location">📍 {user.location}</div>
                     )}
                 </div>
-                <div className="match-card__rating-badge">
-                    <StarRating rating={user.starRating} />
+                <div className="match-card__rating-badge match-card__rating-badge--corner" title={user.trust_label ?? ""}>
+                    <ShieldRating variant="onDark" rating={matchCardShieldRating(user)} />
                 </div>
             </div>
 
@@ -134,12 +163,16 @@ export default function Matching() {
     const [showItsMatch, setShowItsMatch] = useState(false);
     const [heartPending, setHeartPending] = useState(false);
     const [likeActionError, setLikeActionError] = useState("");
+    const [likeLimitAuraPlus, setLikeLimitAuraPlus] = useState(false);
     const [swipeHeartOut, setSwipeHeartOut] = useState(false);
     const navigate = useNavigate();
 
     useEffect(() => { if (!currentUser) navigate("/"); }, [currentUser, navigate]);
     useEffect(() => { setCurrentIndex(0); }, [matches]);
-    useEffect(() => { setLikeActionError(""); }, [currentIndex]);
+    useEffect(() => {
+        setLikeActionError("");
+        setLikeLimitAuraPlus(false);
+    }, [currentIndex]);
 
     const handleHeart = () => {
         const liked = matches[currentIndex];
@@ -162,6 +195,7 @@ export default function Matching() {
                 }
                 if (res.status === 429) {
                     setLikeActionError(data.error || "Daily like limit reached.");
+                    setLikeLimitAuraPlus(data.upgrade_hint === "aura_plus");
                     if (data.likes_left !== undefined) setLikesLeft(data.likes_left);
                     setHeartPending(false);
                     return;
@@ -193,6 +227,13 @@ export default function Matching() {
 
     const handleReject   = () => setCurrentIndex(prev => prev + 1);
     const handleOpenChat = (user) => navigate("/chat", { state: { selectedMatch: user } });
+
+    const showIdleAuraPlus =
+        likesLeft === 0
+        && tierLimit === 3
+        && currentIndex < matches.length
+        && matches.length > 0
+        && !likeActionError;
 
     if (matchesLoading) return (
         <>
@@ -237,9 +278,12 @@ export default function Matching() {
                     </div>
                 )}
 
+                {showIdleAuraPlus && <AuraPlusHint className="aura-plus-hint--quiet" />}
+
                 {likeActionError && (
                     <div className="match-like-alert" role="alert">{likeActionError}</div>
                 )}
+                {likeLimitAuraPlus && <AuraPlusHint />}
 
                 {allSwiped || matches.length === 0 ? (
                     <div className="match-empty">
