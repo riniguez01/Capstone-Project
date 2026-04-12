@@ -3,28 +3,26 @@
 // No machine learning — fully auditable and explainable.
 //
 // Returns: { category, riskLevel }
-//   category:  'normal' | 'flirty' | 'intimate' | 'explicit' | 'pressure' | 'coercive' | 'refusal'
+//   category:  internal codes (normal | flirty | intimate | explicit | pressure | coercive | refusal)
 //   riskLevel: 0 = safe | 1 = warn sender | 2 = block immediately
 //
 // Categories map to required conversation states:
 //   normal    → STATE 0 (always allowed)
 //   flirty    → STATE 1 (requires mutual initiation)
 //   intimate  → STATE 3 (requires consent proxy ≥ 0.6, no resistance)
-//   explicit  → always blocked (never delivered)
+//   explicit  → always blocked (never delivered) — severe inappropriate request (school-safe demo patterns)
 //   pressure  → riskLevel 1 (warn)
-//   coercive  → always blocked
+//   coercive  → always blocked — threats / strong pressure
 //   refusal   → riskLevel 0 but triggers resistance tracking
 
-// ─── Pattern definitions ───────────────────────────────────────────────────
+// ─── Pattern definitions (classroom-appropriate wording; no graphic terms) ───
 
-// BLOCK immediately — explicit sexual content or coercion
+// Blocked immediately (risk 2): severe inappropriate or unsafe requests
 const EXPLICIT_PATTERNS = [
-    /\b(send (me )?(nudes?|pics?|photos?|a pic))\b/i,
-    /\b(want to|wanna|let'?s) hook ?up\b/i,
-    /\b(come over|come to my (place|apartment|house|hotel))\b/i,
-    /\b(netflix and chill)\b/i,
-    /\b(sleep with (me|you))\b/i,
-    /\b(DTF)\b/i,
+    /\b(send (me )?inappropriate (photos?|pics?|pictures))\b/i,
+    /\b(keep (this|us|it) (secret|private) from (your )?(parents|mom|dad|guardians?|teachers?))\b/i,
+    /\b(meet (me )?alone (when|where) no (adults|teachers|parents) (are )?(around|there))\b/i,
+    /\b(let'?s (do )?something (no one|nobody) should know about)\b/i,
 ];
 
 const COERCIVE_PATTERNS = [
@@ -67,7 +65,7 @@ const INTIMATE_PATTERNS = [
 
 // FLIRTY — requires STATE 1
 const FLIRTY_PATTERNS = [
-    /\b(you('?re| are) (so )?(cute|hot|gorgeous|beautiful|handsome|attractive))\b/i,
+    /\b(you('?re| are) (so )?(cute|sweet|gorgeous|beautiful|handsome|attractive))\b/i,
     /\b(i like you)\b/i,
     /\b(i('?m| am) (really )?into you)\b/i,
     /\b(have a crush)\b/i,
@@ -117,4 +115,36 @@ function requiredStateForCategory(category) {
     }
 }
 
-module.exports = { classifyMessage, requiredStateForCategory };
+// Heuristic: likely a request or repeated question (spec §6 repeat requests / questions)
+const REQUEST_QUESTION_HINTS = [
+    /\?/,
+    /\b(will you|can you|could you|would you|do you mind)\b/i,
+    /\b(when (can|will|are) you|what about|how about)\b/i,
+    /\b(please (answer|reply|respond)|did you get)\b/i,
+    /\b(what do you think|let me know)\b/i,
+];
+
+function looksLikeRequestOrQuestion(text) {
+    if (!text || typeof text !== "string") return false;
+    const t = text.trim();
+    if (t.length < 3) return false;
+    return REQUEST_QUESTION_HINTS.some((p) => p.test(t));
+}
+
+/** Short normalized stem to detect the same ask again without a reply from the peer */
+function normalizeRequestStem(text) {
+    if (!text || typeof text !== "string") return "";
+    return text
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .replace(/[^\w\s?]/g, "")
+        .trim()
+        .slice(0, 96);
+}
+
+module.exports = {
+    classifyMessage,
+    requiredStateForCategory,
+    looksLikeRequestOrQuestion,
+    normalizeRequestStem,
+};

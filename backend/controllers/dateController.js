@@ -1,10 +1,26 @@
 const pool = require("../config/db");
+const { evaluateMessage } = require("../conversation/safetyEngine");
+const initSocketServer = require("../realtime/socketServer");
+
+function emitNewChatMessage(matchId, row) {
+    if (!row) return;
+    const io = typeof initSocketServer.getIO === "function" ? initSocketServer.getIO() : null;
+    if (!io) return;
+    const mid = parseInt(String(matchId), 10);
+    if (Number.isNaN(mid)) return;
+    io.to(`match_${mid}`).emit("new_message", row);
+}
 
 exports.sendDateRequest = async (req, res) => {
     const { match_id, sender_id, venue_type, venue_name, proposed_datetime } = req.body;
 
     if (!match_id || !sender_id || !venue_type || !proposed_datetime) {
         return res.status(400).json({ error: "match_id, sender_id, venue_type, and proposed_datetime are required." });
+    }
+
+    const jwtUserId = parseInt(req.user.id, 10);
+    if (parseInt(sender_id, 10) !== jwtUserId) {
+        return res.status(403).json({ error: "sender_id must match the signed-in user." });
     }
 
     try {
@@ -53,11 +69,30 @@ exports.sendDateRequest = async (req, res) => {
         );
         const schedule_id = scheduleResult.rows[0].schedule_id;
 
-        await pool.query(
-            `INSERT INTO message (match_id, sender_id, content, sent_at)
-             VALUES ($1, $2, $3, NOW())`,
-            [match_id, sender_id, `📅 Date Request: How about ${venue_name || venue_type} on ${new Date(proposed_datetime).toLocaleString()}?`]
+        const chatLine = `📅 Date Request: How about ${venue_name || venue_type} on ${new Date(proposed_datetime).toLocaleString()}?`;
+        const safety = await evaluateMessage(
+            parseInt(match_id, 10),
+            parseInt(sender_id, 10),
+            recipient_id,
+            chatLine
         );
+        if (safety.decision === "block") {
+            await pool.query(`DELETE FROM date_scheduling WHERE schedule_id = $1`, [schedule_id]);
+            return res.status(403).json({
+                error:    safety.reason,
+                blocked:  true,
+                reason:   safety.reason,
+                cooldown: safety.cooldownApplied,
+            });
+        }
+
+        const msgInsert = await pool.query(
+            `INSERT INTO message (match_id, sender_id, content, sent_at)
+             VALUES ($1, $2, $3, NOW())
+             RETURNING message_id, match_id, sender_id, content, sent_at`,
+            [match_id, sender_id, chatLine]
+        );
+        emitNewChatMessage(match_id, msgInsert.rows[0]);
 
         await pool.query(
             `INSERT INTO notifications (user_id, type, payload, is_read, created_at)
@@ -72,11 +107,15 @@ exports.sendDateRequest = async (req, res) => {
             })]
         );
 
-        res.status(201).json({
+        const payload = {
             message:       "Date request sent.",
             schedule_id,
             requests_left: 3 - (sentThisWeek + 1),
-        });
+        };
+        if (safety.decision === "prompt") {
+            payload.warning = safety.reason;
+        }
+        res.status(201).json(payload);
     } catch (err) {
         console.error("sendDateRequest error:", err.message);
         res.status(500).json({ error: "Failed to send date request." });
@@ -85,21 +124,62 @@ exports.sendDateRequest = async (req, res) => {
 
 exports.respondToDate = async (req, res) => {
     const { scheduleId } = req.params;
-    const { response, user_id } = req.body;
+    const { response } = req.body;
+    const responderId = parseInt(req.user.id, 10);
 
     if (!["approved", "rejected"].includes(response)) {
         return res.status(400).json({ error: "Response must be 'approved' or 'rejected'." });
     }
 
     try {
+        const sid = parseInt(scheduleId, 10);
+        if (Number.isNaN(sid)) {
+            return res.status(400).json({ error: "Invalid schedule id." });
+        }
+
+        const pending = await pool.query(
+            `SELECT ds.schedule_id, ds.match_id, ds.proposed_datetime, ds.venue_name, ds.status,
+                    m.user1_id, m.user2_id,
+                    (SELECT (payload->>'sender_id')::int FROM notifications
+                     WHERE type = 'date_request' AND (payload->>'schedule_id')::int = ds.schedule_id
+                     LIMIT 1) AS requester_id
+             FROM date_scheduling ds
+             JOIN matches m ON m.match_id = ds.match_id
+             WHERE ds.schedule_id = $1`,
+            [sid]
+        );
+
+        if (pending.rows.length === 0) {
+            return res.status(404).json({ error: "Date not found." });
+        }
+
+        const pr = pending.rows[0];
+        if (pr.status !== "pending") {
+            return res.status(409).json({ error: "This date has already been responded to." });
+        }
+
+        const u1 = parseInt(pr.user1_id, 10);
+        const u2 = parseInt(pr.user2_id, 10);
+        const requesterId = pr.requester_id != null ? parseInt(pr.requester_id, 10) : null;
+
+        if (responderId !== u1 && responderId !== u2) {
+            return res.status(403).json({ error: "You are not part of this match." });
+        }
+        if (requesterId != null && responderId === requesterId) {
+            return res.status(403).json({ error: "Only the recipient can respond to this request." });
+        }
+        if (requesterId == null) {
+            return res.status(400).json({ error: "Could not verify the original date request." });
+        }
+
         const result = await pool.query(
-            `UPDATE date_scheduling SET status = $1 WHERE schedule_id = $2
+            `UPDATE date_scheduling SET status = $1 WHERE schedule_id = $2 AND status = 'pending'
              RETURNING match_id, proposed_datetime, venue_name`,
-            [response, scheduleId]
+            [response, sid]
         );
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ error: "Date not found." });
+            return res.status(409).json({ error: "This date has already been responded to." });
         }
 
         const { match_id, proposed_datetime, venue_name } = result.rows[0];
@@ -108,30 +188,36 @@ exports.respondToDate = async (req, res) => {
             `UPDATE notifications SET is_read = true
              WHERE type = 'date_request'
                AND (payload->>'schedule_id')::int = $1`,
-            [parseInt(scheduleId)]
+            [sid]
         );
 
-        const matchResult = await pool.query(
-            `SELECT user1_id, user2_id FROM matches WHERE match_id = $1`,
-            [match_id]
-        );
-        const { user1_id, user2_id } = matchResult.rows[0];
-        const other_user_id = parseInt(user_id) === user1_id ? user2_id : user1_id;
+        const other_user_id = responderId === u1 ? u2 : u1;
 
         const responderResult = await pool.query(
             `SELECT first_name, last_name FROM users WHERE user_id = $1`,
-            [parseInt(user_id)]
+            [responderId]
         );
         const responderName = responderResult.rows.length > 0
             ? `${responderResult.rows[0].first_name || ""} ${responderResult.rows[0].last_name || ""}`.trim()
             : "Your match";
+
+        const statusVerb = response === "approved" ? "accepted" : "declined";
+        const chatLine = `📅 ${responderName} ${statusVerb} the date request.`;
+
+        const msgInsert = await pool.query(
+            `INSERT INTO message (match_id, sender_id, content, sent_at)
+             VALUES ($1, $2, $3, NOW())
+             RETURNING message_id, match_id, sender_id, content, sent_at`,
+            [match_id, responderId, chatLine]
+        );
+        emitNewChatMessage(match_id, msgInsert.rows[0]);
 
         if (response === "approved") {
             await pool.query(
                 `INSERT INTO notifications (user_id, type, payload, is_read, created_at)
                  VALUES ($1, 'date_accepted', $2, false, NOW())`,
                 [other_user_id, JSON.stringify({
-                    schedule_id:    parseInt(scheduleId),
+                    schedule_id:    sid,
                     venue_name,
                     proposed_datetime,
                     responder_name: responderName,
@@ -142,14 +228,14 @@ exports.respondToDate = async (req, res) => {
                 `INSERT INTO survey_trigger (schedule_id, user1_id, user2_id, trigger_at, sent, created_at)
                  VALUES ($1, $2, $3, $4::timestamptz, false, NOW())
                  ON CONFLICT (schedule_id) DO NOTHING`,
-                [scheduleId, user1_id, user2_id, proposed_datetime]
+                [sid, user1_id, user2_id, proposed_datetime]
             );
         } else {
             await pool.query(
                 `INSERT INTO notifications (user_id, type, payload, is_read, created_at)
                  VALUES ($1, 'date_declined', $2, false, NOW())`,
                 [other_user_id, JSON.stringify({
-                    schedule_id:    parseInt(scheduleId),
+                    schedule_id:    sid,
                     venue_name,
                     proposed_datetime,
                     responder_name: responderName,

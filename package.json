@@ -8,7 +8,9 @@
     "test:smoke": "node scripts/smoke-matches.mjs",
     "db:ensure-test-users": "node scripts/run-sql.js database/ensure_test_users_complete.sql",
     "db:repair:curated-prefs": "node scripts/run-sql.js database/repair_curated_capstone_partner_preferences.sql",
-    "db:seed:demo": "node scripts/seedCapstoneDemoUsers.js"
+    "db:seed:demo": "node scripts/seedCapstoneDemoUsers.js",
+    "db:feature3:seed": "node scripts/feature3TestPair.js seed",
+    "db:feature3:reset": "node scripts/feature3TestPair.js reset"
   },
   "private": true,
   "dependencies": {

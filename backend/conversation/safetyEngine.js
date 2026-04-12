@@ -5,7 +5,7 @@
 //   1. Cooldown check           — sender blocked from a previous violation?
 //   2. Message classification   — what category/risk is this message?
 //   3. Escalation level         — how many unanswered/resistance signals?
-//   4. Hard block check         — explicit, coercive, or restrict escalation
+//   4. Hard block check         — severe inappropriate / pressure, or restrict escalation
 //   5. State + transition check — is this category allowed in current state?
 //   6. Decision output          — deliver | prompt | block
 //   7. State/counter update     — update conversation record
@@ -20,7 +20,34 @@ const {
     applyCooldown
 } = require('./conversationState');
 
-const { classifyMessage, requiredStateForCategory } = require('./riskClassifier');
+const { ensureConversationLoaded, persistConversation } = require('./safetyPersistence');
+
+const {
+    classifyMessage,
+    requiredStateForCategory,
+    looksLikeRequestOrQuestion
+} = require('./riskClassifier');
+
+async function saveAndPersist(matchId, conv) {
+    saveConversation(matchId, conv);
+    await persistConversation(matchId);
+}
+
+/** When a cooldown has ended, clear escalation counters so the pipeline can recover (spec §6). */
+async function expireCooldownIfNeeded(matchId) {
+    const conv = getConversation(matchId);
+    if (!conv.cooldownUntil) return;
+    if (new Date() < new Date(conv.cooldownUntil)) return;
+    await saveAndPersist(matchId, {
+        ...conv,
+        cooldownUntil:       null,
+        cooldownSenderId:    null,
+        resistanceCount:     0,
+        repeatRequestCount:  0,
+        resistanceWindow:    [],
+        unansweredCount:     0
+    });
+}
 
 // ─── Escalation level computation ─────────────────────────────────────────
 // Spec §6 escalation table:
@@ -56,27 +83,58 @@ function canTransitionTo(requiredState, conv) {
     }
 
     if (requiredState === STATE.INTIMATE) {
-        // S2 → S3: consent proxy ≥ 0.6, no resistance in last 5, no escalation flags
+        // S2 → S3: sustained engagement (spec) — not only score; blocks early “I love you” after quick S2
         return conv.consentScore >= 0.6 &&
             conv.resistanceWindow.filter(Boolean).length === 0 &&
-            conv.resistanceCount === 0;
+            conv.resistanceCount === 0 &&
+            conv.alternatingCount >= 4 &&
+            (conv.totalMessages || 0) >= 6;
     }
 
     return false;
 }
 
 // ─── Consent proxy score updater ──────────────────────────────────────────
-// Spec §7 — soft numerical estimate of mutual engagement.
-// Adjusts up for healthy patterns, down for one-sided or resistant patterns.
-function updateConsentScore(conv, isAlternating) {
+// Spec §7 — soft numerical estimate of mutual engagement (not legal consent).
+// Includes: alternation, balanced participation, response timing, resistance, one-sided streaks.
+function updateConsentScore(conv, isAlternating, ctx) {
+    const { peerLastAt, nowMs } = ctx;
     let delta = 0;
 
-    if (isAlternating) delta += 0.05;                        // good: they replied
-    if (conv.unansweredCount >= 2) delta -= 0.05;            // bad: one-sided
-    if (conv.resistanceCount > 0) delta -= 0.10;             // bad: resistance detected
-    if (conv.consentScore > 0.7 && isAlternating) delta += 0.02; // bonus: sustained engagement
+    if (isAlternating) delta += 0.05;
+    if (conv.unansweredCount >= 2) delta -= 0.05;
+    if (conv.resistanceCount > 0) delta -= 0.10;
+    if (conv.consentScore > 0.7 && isAlternating) delta += 0.02;
+
+    // Balanced initiation / participation — both users contributing (spec §7)
+    const counts = Object.values(conv.messageCounts || {}).map(Number).filter((n) => n > 0);
+    if (counts.length >= 2) {
+        const mx = Math.max(...counts);
+        const mn = Math.min(...counts);
+        const ratio = mx > 0 ? mn / mx : 1;
+        if (ratio >= 0.35 && mx >= 3) delta += 0.03;
+        if (ratio < 0.22 && mx >= 8) delta -= 0.04;
+    }
+
+    // Response timing — quick mutual replies vs very long silence after the peer spoke (spec §7)
+    if (isAlternating && peerLastAt != null) {
+        const gap = nowMs - peerLastAt;
+        if (gap > 48 * 3600000) delta -= 0.05;
+        else if (gap < 12 * 60000) delta += 0.025;
+    }
+
+    // Topic avoidance proxy — many consecutive messages from one side without reply
+    if (conv.unansweredCount >= 3) delta -= 0.04;
 
     return Math.max(0, Math.min(1, conv.consentScore + delta));
+}
+
+/** Person who refused may still send neutral / clarification under restrict escalation (not the other party). */
+function _victimBenignFollowUp(conv, senderId, category, riskLevel) {
+    if (conv.boundarySetByUserId == null) return false;
+    if (parseInt(String(senderId), 10) !== parseInt(String(conv.boundarySetByUserId), 10)) return false;
+    if (riskLevel >= 2) return false;
+    return category === 'normal' || category === 'refusal';
 }
 
 // ─── MAIN EVALUATION FUNCTION ──────────────────────────────────────────────
@@ -90,8 +148,23 @@ function updateConsentScore(conv, isAlternating) {
 //   escalation: string,               — 'normal' | 'warning' | 'restrict'
 //   cooldownApplied: boolean
 // }
-function evaluateMessage(matchId, senderId, recipientId, content) {
-    const conv = getConversation(matchId);
+async function evaluateMessage(matchId, senderId, recipientId, content) {
+    matchId = parseInt(matchId, 10);
+    senderId = parseInt(senderId, 10);
+    recipientId = parseInt(recipientId, 10);
+    if (Number.isNaN(matchId) || Number.isNaN(senderId) || Number.isNaN(recipientId)) {
+        return {
+            decision:        'block',
+            reason:          'Invalid message context.',
+            category:        'invalid',
+            escalation:      'normal',
+            cooldownApplied: false
+        };
+    }
+
+    await ensureConversationLoaded(matchId);
+    await expireCooldownIfNeeded(matchId);
+    let conv = getConversation(matchId);
 
     // ── Step 1: Cooldown check ─────────────────────────────────────────────
     if (isOnCooldown(matchId, senderId)) {
@@ -111,28 +184,30 @@ function evaluateMessage(matchId, senderId, recipientId, content) {
     // ── Step 3: Compute escalation BEFORE updating counters ───────────────
     const escalation = getEscalationLevel(conv);
 
-    // ── Step 4: Hard blocks — explicit/coercive always blocked ────────────
+    // ── Step 4: Hard blocks — severe inappropriate or pressuring / threatening language
     if (riskLevel === 2) {
-        // Apply cooldown for coercive/explicit — spec "Temporary sending restriction"
+        // Apply cooldown — temporary sending restriction after a serious policy violation
         applyCooldown(matchId, senderId, 2);
-        _updateCounters(conv, senderId, recipientId, category, false);
-        saveConversation(matchId, conv);
+        conv = getConversation(matchId);
+        _updateCounters(conv, senderId, recipientId, category, false, content);
+        await saveAndPersist(matchId, conv);
         return {
             decision:       'block',
             reason:         category === 'explicit'
-                ? 'This type of content is not allowed on Aura.'
-                : 'Coercive language is not permitted. Your message was not sent.',
+                ? 'This type of message is not allowed on Aura.'
+                : 'Messages that pressure or threaten someone are not allowed. Your message was not sent.',
             category,
             escalation,
             cooldownApplied: true
         };
     }
 
-    // Hard block if escalation is restrict (resistance or repeated pressure)
-    if (escalation === 'restrict') {
+    // Hard block if escalation is restrict — except the user who set the boundary may send neutral follow-ups (E3).
+    if (escalation === 'restrict' && !_victimBenignFollowUp(conv, senderId, category, riskLevel)) {
         applyCooldown(matchId, senderId, 2);
-        _updateCounters(conv, senderId, recipientId, category, false);
-        saveConversation(matchId, conv);
+        conv = getConversation(matchId);
+        _updateCounters(conv, senderId, recipientId, category, false, content);
+        await saveAndPersist(matchId, conv);
         return {
             decision:       'block',
             reason:         'A boundary has been indicated in this conversation. Your message was not sent.',
@@ -143,27 +218,38 @@ function evaluateMessage(matchId, senderId, recipientId, content) {
     }
 
     // ── Step 5: State + transition check ──────────────────────────────────
-    if (requiredState > conv.state) {
-        if (!canTransitionTo(requiredState, conv)) {
+    // Project natural S1→S2 advance using this message’s alternation (counters update later).
+    const willAlternate = conv.lastSenderId !== null && conv.lastSenderId !== senderId;
+    const projectedAlternating = willAlternate ? conv.alternatingCount + 1 : conv.alternatingCount;
+    let effectiveState = conv.state;
+    if (effectiveState === STATE.FLIRTING &&
+        projectedAlternating >= 3 &&
+        conv.resistanceWindow.filter(Boolean).length === 0) {
+        effectiveState = STATE.PERSONAL;
+    }
+    const convForTransition = effectiveState === conv.state ? conv : { ...conv, state: effectiveState };
+
+    if (requiredState > convForTransition.state) {
+        if (!canTransitionTo(requiredState, convForTransition)) {
             // Invalid transition — block
-            _updateCounters(conv, senderId, recipientId, category, false);
-            saveConversation(matchId, conv);
+            _updateCounters(conv, senderId, recipientId, category, false, content);
+            await saveAndPersist(matchId, conv);
             return {
                 decision:       'block',
-                reason:         _transitionBlockReason(conv.state, requiredState),
+                reason:         _transitionBlockReason(convForTransition.state, requiredState),
                 category,
                 escalation,
                 cooldownApplied: false
             };
         }
-        // Valid transition — advance state
+        // Valid transition — advance state to target (may skip natural S1→S2 if message is intimate)
         conv.state = requiredState;
     }
 
     // ── Step 6: Warning escalation — prompt but allow ─────────────────────
     if (escalation === 'warning' || riskLevel === 1) {
-        _updateCounters(conv, senderId, recipientId, category, true);
-        saveConversation(matchId, conv);
+        _updateCounters(conv, senderId, recipientId, category, true, content);
+        await saveAndPersist(matchId, conv);
         return {
             decision:       'prompt',
             reason:         'Just a reminder to make sure the other person is comfortable.',
@@ -174,8 +260,8 @@ function evaluateMessage(matchId, senderId, recipientId, content) {
     }
 
     // ── Step 7: All good — deliver ─────────────────────────────────────────
-    _updateCounters(conv, senderId, recipientId, category, true);
-    saveConversation(matchId, conv);
+    _updateCounters(conv, senderId, recipientId, category, true, content);
+    await saveAndPersist(matchId, conv);
     return {
         decision:       'deliver',
         reason:         null,
@@ -188,8 +274,10 @@ function evaluateMessage(matchId, senderId, recipientId, content) {
 // ─── Internal counter update helper ───────────────────────────────────────
 // Updates all behavioral counters and consent score.
 // Called AFTER the decision is already made (doesn't affect current decision).
-function _updateCounters(conv, senderId, recipientId, category, willDeliver) {
+function _updateCounters(conv, senderId, recipientId, category, willDeliver, content) {
+    const nowMs = Date.now();
     const isAlternating = conv.lastSenderId !== null && conv.lastSenderId !== senderId;
+    const peerLastAt = conv.lastMessageAtByUser[String(recipientId)];
 
     // Track initiators (both users must have sent at least one message)
     if (!conv.messageCounts[senderId]) {
@@ -206,27 +294,35 @@ function _updateCounters(conv, senderId, recipientId, category, willDeliver) {
         if (isAlternating) conv.alternatingCount++;
     }
 
-    // Repeat request count
+    // Repeat request / question count (spec §6) — pressure lines or piled-on asks without a reply
+    const piledOn = conv.lastSenderId !== null && conv.lastSenderId === senderId;
     if (category === 'pressure') {
+        conv.repeatRequestCount++;
+    } else if (piledOn && looksLikeRequestOrQuestion(content)) {
         conv.repeatRequestCount++;
     }
 
-    // Resistance tracking — only count when the RECIPIENT sends a refusal back.
-    // The sender is the one being tracked for pressure; the recipient pushing back
-    // is the signal that a boundary has been set.
-    const isRecipientRefusal = category === 'refusal' && conv.lastSenderId !== null && conv.lastSenderId !== senderId;
-    conv.resistanceWindow = [...conv.resistanceWindow.slice(-4), isRecipientRefusal];
-    if (isRecipientRefusal) conv.resistanceCount++;
+    // Resistance — any message that signals refusal or discomfort (spec §6).
+    const refusalSignal = category === 'refusal';
+    conv.resistanceWindow = [...conv.resistanceWindow.slice(-4), refusalSignal];
+    if (refusalSignal) {
+        conv.resistanceCount++;
+        conv.boundarySetByUserId = senderId;
+    }
 
-    // Update consent score
-    conv.consentScore = updateConsentScore(conv, isAlternating);
+    conv.lastMessageAtByUser[String(senderId)] = nowMs;
 
-    // Try advancing state naturally (organic progression for normal messages)
+    conv.consentScore = updateConsentScore(conv, isAlternating, {
+        senderId,
+        recipientId,
+        peerLastAt,
+        nowMs
+    });
+
     if (category === 'normal' || category === 'flirty') {
         _tryNaturalStateAdvance(conv);
     }
 
-    // Update last sender
     conv.lastSenderId = senderId;
 }
 
@@ -236,6 +332,13 @@ function _tryNaturalStateAdvance(conv) {
         conv.initiators.size >= 2 &&
         conv.resistanceWindow.filter(Boolean).length === 0) {
         conv.state = STATE.FLIRTING;
+        return;
+    }
+    // S1 → S2: at least 3 alternating exchanges, no resistance in window (spec §4–5).
+    if (conv.state === STATE.FLIRTING &&
+        conv.alternatingCount >= 3 &&
+        conv.resistanceWindow.filter(Boolean).length === 0) {
+        conv.state = STATE.PERSONAL;
     }
 }
 
@@ -245,7 +348,7 @@ function _transitionBlockReason(currentState, requiredState) {
         return 'This type of message is only appropriate later in a conversation. Take time to get to know each other first.';
     }
     if (requiredState === STATE.INTIMATE) {
-        return 'Intimate topics require sustained mutual engagement first. Keep getting to know each other.';
+        return 'Personal messages like this work best after you\'ve both been chatting for a while. Keep getting to know each other.';
     }
     if (requiredState === STATE.FLIRTING) {
         return 'Wait for the other person to engage before moving in that direction.';
