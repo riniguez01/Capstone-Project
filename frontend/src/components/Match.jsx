@@ -1,4 +1,4 @@
-import StarRating from "./StarRating";
+import ShieldRating from "./ShieldRating";
 
 function Match({ user, onHeart, onReject }) {
     return (
@@ -22,7 +22,11 @@ function Match({ user, onHeart, onReject }) {
                 </div>
 
                 <div className="pb-2 mt-2">
-                    <StarRating rating={user.starRating} />
+                    <div className="small text-muted">Safety trust</div>
+                    <ShieldRating
+                        rating={user.trust_label === "New User" ? null : user.shield_rating ?? user.starRating}
+                    />
+                    <div className="small text-muted">{user.trust_label ?? "New User"}</div>
                 </div>
             </div>
 

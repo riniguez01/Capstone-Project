@@ -83,6 +83,15 @@ export function mapAuthUserToProfile(u) {
         children: normalizeChildrenUi(u.children_name),
         politicalStanding: mapLegacyNoPreferenceLabel(u.political_name),
         trustScore: u.trust_score != null ? Number(u.trust_score) : null,
+        trustDisplay: u.trust_display
+            ? {
+                label: u.trust_display.label,
+                shield_count: u.trust_display.shield_count,
+                dates_reviewed: u.trust_display.dates_reviewed,
+                public_trust_rating: u.trust_display.public_trust_rating,
+                show_numeric: u.trust_display.show_numeric,
+            }
+            : null,
     };
 }
 
@@ -144,6 +153,7 @@ function emptyProfile() {
         children: "",
         politicalStanding: "",
         trustScore: null,
+        trustDisplay: null,
     };
 }
 
@@ -169,6 +179,10 @@ export function UserProvider({ children }) {
     const [profile, setProfile] = useState(() => emptyProfile());
     const [preferences, setPreferences] = useState(defaultPreferences);
     const [accountProfileLoaded, setAccountProfileLoaded] = useState(false);
+    const [notificationEpoch, setNotificationEpoch] = useState(0);
+    const bumpNotificationEpoch = useCallback(() => {
+        setNotificationEpoch((n) => n + 1);
+    }, []);
 
     const syncSessionFromAuthUser = useCallback((u) => {
         if (!u) return;
@@ -195,6 +209,11 @@ export function UserProvider({ children }) {
     };
 
     const logout = () => {
+        try {
+            sessionStorage.removeItem("aura_appeal_resolution");
+        } catch {
+            /* ignore */
+        }
         localStorage.removeItem("user");
         localStorage.removeItem("token");
         setCurrentUser(null);
@@ -208,6 +227,21 @@ export function UserProvider({ children }) {
     };
 
     const userId = currentUser?.user_id;
+
+    const refreshAuthProfile = useCallback(async () => {
+        if (!token) return;
+        try {
+            const meRes = await fetch(`${API_BASE_URL}/auth/me`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (meRes.ok) {
+                const meData = await meRes.json();
+                if (meData?.user) syncSessionFromAuthUser(meData.user);
+            }
+        } catch {
+            /* ignore */
+        }
+    }, [token, syncSessionFromAuthUser]);
 
     const refreshMatches = useCallback(async () => {
         if (!userId || !token) return;
@@ -285,7 +319,10 @@ export function UserProvider({ children }) {
             preferences, setPreferences,
             accountProfileLoaded,
             refreshMatches,
+            refreshAuthProfile,
             syncSessionFromAuthUser,
+            notificationEpoch,
+            bumpNotificationEpoch,
         }}>
             {children}
         </UserContext.Provider>

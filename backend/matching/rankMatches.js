@@ -12,9 +12,13 @@ module.exports = function rankMatches(user, filteredCandidates) {
 
             const trustScore  = ni(candidate.trust_score);
             const isPenalized = trustScore !== null && trustScore <= TRUST_PENALTY_THRESHOLD;
+            const visPen      = ni(candidate.visibility_rank_penalty);
 
             if (isPenalized) {
                 adjustedScore = Math.max(0, adjustedScore - TRUST_PENALTY_AMOUNT);
+            }
+            if (visPen !== null && visPen > 0) {
+                adjustedScore = Math.max(0, adjustedScore - visPen);
             }
 
             return {

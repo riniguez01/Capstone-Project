@@ -1,6 +1,7 @@
 const pool        = require("../config/db");
 const bcrypt      = require("bcrypt");
 const { generateToken } = require("../utils/jwtHelper");
+const { getTrustDisplayForUser } = require("../services/trustService");
 const SALT_ROUNDS = 10;
 
 exports.signup = async (req, res) => {
@@ -180,7 +181,15 @@ exports.getMe = async (req, res) => {
             return res.status(404).json({ error: "User not found." });
         }
 
-        res.json({ user: result.rows[0] });
+        const row = result.rows[0];
+        let trust_display = null;
+        try {
+            trust_display = await getTrustDisplayForUser(userId);
+        } catch {
+            trust_display = null;
+        }
+
+        res.json({ user: { ...row, trust_display } });
     } catch (err) {
         console.error("getMe error:", err.message);
         res.status(500).json({ error: "Failed to load profile." });
