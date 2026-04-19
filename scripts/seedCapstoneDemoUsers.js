@@ -1169,6 +1169,9 @@ async function seed() {
             }
         }
 
+        const { ensureTestUserTrustDatesReviewed } = require("./ensureTestUserTrustDatesReviewed");
+        await ensureTestUserTrustDatesReviewed(client);
+
         await client.query("COMMIT");
         console.log(`Seeded ${DEMO_USERS.length} users (@test.com). Password for all: password123`);
     } catch (e) {

@@ -61,6 +61,10 @@ function candidateMapFromRows(rows) {
 }
 
 module.exports = async function generateMatches(user, candidates, shouldRank = true) {
+    const viewerTrust = ni(user.trust_score);
+    if (viewerTrust !== null && viewerTrust <= filterMatches.TRUST_ELIMINATION_THRESHOLD) {
+        return { matches: [], candidateByUserId: new Map() };
+    }
 
     const candidatesWithPrefs = await attachCandidatePreferences(candidates);
 

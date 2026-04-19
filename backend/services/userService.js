@@ -25,7 +25,7 @@ async function getUserById(userId) {
             ts.public_trust_rating,
             (SELECT COUNT(DISTINCT p.schedule_id)::int FROM post_date_checkin p
              WHERE p.reviewed_user_id = u.user_id AND p.schedule_id IS NOT NULL) AS trust_dates_reviewed,
-            ph.photo_url              AS profile_photo_url,
+            COALESCE(NULLIF(BTRIM(u.profile_photo_url), ''), ph.photo_url) AS profile_photo_url,
             rt.religion_name,
             et.ethnicity_name,
             sm.smoking_name,
@@ -167,7 +167,7 @@ async function getCandidates(excludeUserId) {
             ts.public_trust_rating,
             (SELECT COUNT(DISTINCT p.schedule_id)::int FROM post_date_checkin p
              WHERE p.reviewed_user_id = u.user_id AND p.schedule_id IS NOT NULL) AS trust_dates_reviewed,
-            ph.photo_url              AS profile_photo_url,
+            COALESCE(NULLIF(BTRIM(u.profile_photo_url), ''), ph.photo_url) AS profile_photo_url,
             rt.religion_name,
             et.ethnicity_name,
             sm.smoking_name,
@@ -203,7 +203,8 @@ async function getCandidates(excludeUserId) {
             u.political,
             u.religion_id,
             u.ethnicity_id,
-            u.education_career_id
+            u.education_career_id,
+            co.coffee_name
         FROM users u
         LEFT JOIN gender_type      gt ON gt.gender_type_id       = u.gender_identity
         LEFT JOIN trust_score      ts ON ts.user_id              = u.user_id
@@ -212,6 +213,7 @@ async function getCandidates(excludeUserId) {
         LEFT JOIN ethnicity_type   et ON et.ethnicity_type_id    = u.ethnicity_id
         LEFT JOIN smoking          sm ON sm.smoking_id           = u.smoking_id
         LEFT JOIN drinking         dr ON dr.drinking_id          = u.drinking_id
+        LEFT JOIN coffee_drinker   co ON co.coffee_id            = u.coffee_id
         LEFT JOIN diet             di ON di.diet_id              = u.diet_id
         LEFT JOIN activity_level   al ON al.activity_level_id   = u.activity_level
         LEFT JOIN family_oriented  fo ON fo.family_oriented_id  = u.family_oriented
@@ -226,7 +228,12 @@ async function getCandidates(excludeUserId) {
         LEFT JOIN political_affil  pa ON pa.political_affil_id   = u.political
         LEFT JOIN education_career ec ON ec.education_career_id  = u.education_career_id
         WHERE u.user_id != $1
-          AND u.account_status = 'active'`,
+          AND u.account_status = 'active'
+          AND NOT EXISTS (
+              SELECT 1 FROM blocks b
+              WHERE (b.blocker_user_id = $1 AND b.blocked_user_id = u.user_id)
+                 OR (b.blocked_user_id = $1 AND b.blocker_user_id = u.user_id)
+          )`,
         [excludeUserId]
     );
     return result.rows;

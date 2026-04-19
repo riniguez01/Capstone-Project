@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import { API_BASE_URL } from "../config/api";
 
 const UserContext = createContext();
@@ -40,11 +40,24 @@ function mapLegacyNoPreferenceLabel(name) {
     return s;
 }
 
+function stripInternalMatchFields(row) {
+    if (!row || typeof row !== "object") return row;
+    const o = { ...row };
+    delete o.trust_penalized;
+    return o;
+}
+
 function sanitizePhotoUrl(v) {
     if (v == null) return null;
     const s = String(v).trim();
     if (!s || s === "null" || s === "undefined") return null;
     return s;
+}
+
+function scoreId(v) {
+    if (v == null || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
 }
 
 export function mapAuthUserToProfile(u) {
@@ -92,12 +105,30 @@ export function mapAuthUserToProfile(u) {
                 show_numeric: u.trust_display.show_numeric,
             }
             : null,
+        scoreMusicId: scoreId(u.score_music_id),
+        scoreTravelId: scoreId(u.score_travel_id),
+        scorePetInterestId: scoreId(u.score_pet_interest_id),
+        scoreReaderId: scoreId(u.score_reader_id),
+        scoreGamerId: scoreId(u.score_gamer_id),
+        scoreActivityLevelId: scoreId(u.score_activity_level_id),
+        scoreDrinkingId: scoreId(u.score_drinking_id),
+        scoreSmokingId: scoreId(u.score_smoking_id),
+        scoreCoffeeId: scoreId(u.score_coffee_id),
+        scoreDietId: scoreId(u.score_diet_id),
+        scorePersonalityTypeId: scoreId(u.score_personality_type_id),
+        scorePoliticalId: scoreId(u.score_political_id),
+        scoreDatingGoalsId: scoreId(u.score_dating_goals_id),
+        scoreChildrenId: scoreId(u.score_children_id),
+        scoreReligionId: scoreId(u.score_religion_id),
+        scoreFamilyOrientedId: scoreId(u.score_family_oriented_id),
+        scoreEducationCareerId: scoreId(u.score_education_career_id),
     };
 }
 
 function defaultPreferences() {
     return {
         genderPref: "",
+        genderPrefs: [],
         minAge: 18,
         maxAge: 100,
         religionPref: "",
@@ -115,11 +146,28 @@ function defaultPreferences() {
 
 function normalizePartnerTogglePrefs(p) {
     const next = { ...p };
-    const toggles = ["childrenPref", "activityPref", "familyOrientedPref", "datingGoalPref", "genderPref"];
+    const toggles = ["childrenPref", "activityPref", "familyOrientedPref", "datingGoalPref"];
     for (const key of toggles) {
         if (next[key] === "" || next[key] == null) {
             next[key] = "No preference";
         }
+    }
+    if (!Array.isArray(next.genderPrefs)) next.genderPrefs = [];
+    else {
+        let gp = next.genderPrefs.filter((x) => typeof x === "string");
+        if (gp.length === 1 && gp[0] === "Open to all") {
+            gp = [];
+        } else {
+            gp = gp.filter((x) => x !== "Open to all");
+        }
+        next.genderPrefs = gp;
+    }
+    if (next.genderPrefs.length === 0) {
+        next.genderPref = "No preference";
+    } else if (next.genderPrefs.length === 1) {
+        next.genderPref = next.genderPrefs[0];
+    } else {
+        next.genderPref = "Multiple";
     }
     return next;
 }
@@ -184,6 +232,9 @@ export function UserProvider({ children }) {
         setNotificationEpoch((n) => n + 1);
     }, []);
 
+    /** Invalidates in-flight GET /matches responses after logout/login or when a newer fetch starts. */
+    const matchesFetchGenRef = useRef(0);
+
     const syncSessionFromAuthUser = useCallback((u) => {
         if (!u) return;
         setProfile(mapAuthUserToProfile(u));
@@ -202,6 +253,7 @@ export function UserProvider({ children }) {
     }, []);
 
     const login = (userData, jwtToken) => {
+        matchesFetchGenRef.current += 1;
         localStorage.setItem("user", JSON.stringify(userData));
         localStorage.setItem("token", jwtToken);
         setCurrentUser(userData);
@@ -209,6 +261,7 @@ export function UserProvider({ children }) {
     };
 
     const logout = () => {
+        matchesFetchGenRef.current += 1;
         try {
             sessionStorage.removeItem("aura_appeal_resolution");
         } catch {
@@ -243,26 +296,32 @@ export function UserProvider({ children }) {
         }
     }, [token, syncSessionFromAuthUser]);
 
-    const refreshMatches = useCallback(async () => {
+    const refreshMatches = useCallback(async (opts) => {
         if (!userId || !token) return;
-        setMatchesLoading(true);
+        const myGen = ++matchesFetchGenRef.current;
+        const silent = Boolean(opts && opts.silent);
+        if (!silent) setMatchesLoading(true);
         setMatchesError(null);
         try {
             const res = await fetch(`${API_BASE_URL}/matches/${userId}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
+            if (myGen !== matchesFetchGenRef.current) return;
             if (!res.ok) {
                 setMatchesError(data.error || "Failed to load matches.");
+                if (res.status === 403) setMatches([]);
                 return;
             }
-            setMatches(data.matches || []);
+            setMatches((data.matches || []).map(stripInternalMatchFields));
             if (data.likes_left !== undefined) setLikesLeft(data.likes_left);
             if (data.tier_limit !== undefined) setTierLimit(data.tier_limit);
         } catch {
+            if (myGen !== matchesFetchGenRef.current) return;
             setMatchesError("Could not connect to server.");
         } finally {
-            setMatchesLoading(false);
+            if (myGen !== matchesFetchGenRef.current) return;
+            if (!silent) setMatchesLoading(false);
         }
     }, [userId, token]);
 
@@ -293,9 +352,17 @@ export function UserProvider({ children }) {
                 if (!cancelled && prefRes.ok) {
                     const prefData = await prefRes.json();
                     if (prefData?.preferences) {
-                        setPreferences(
-                            normalizePartnerTogglePrefs({ ...defaultPreferences(), ...prefData.preferences })
-                        );
+                        const raw = prefData.preferences;
+                        const merged = {
+                            ...defaultPreferences(),
+                            ...raw,
+                            genderPrefs: Array.isArray(raw.genderPrefs) && raw.genderPrefs.length > 0
+                                ? raw.genderPrefs
+                                : raw.genderPref && raw.genderPref !== "No preference" && raw.genderPref !== "Multiple"
+                                    ? [raw.genderPref]
+                                    : [],
+                        };
+                        setPreferences(normalizePartnerTogglePrefs(merged));
                     } else {
                         setPreferences(normalizePartnerTogglePrefs(defaultPreferences()));
                     }

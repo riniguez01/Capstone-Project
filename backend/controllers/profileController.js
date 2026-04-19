@@ -1,5 +1,8 @@
 const pool = require("../config/db");
 const { ni } = require("../utils/pgCoerce");
+const { partnerUiLabelsToDbNames, dbGenderNameToPartnerUi } = require("../utils/partnerGenderUi");
+const { parseCityStateLocation } = require("../utils/parseCityStateLocation");
+const { geocodeCityState } = require("../services/geocodeCityState");
 
 const GENDER         = { "Male": 1, "Man": 1, "Female": 2, "Woman": 2, "Non-binary": 3 };
 const RELIGION       = { "Atheist": 1, "Agnostic": 2, "Buddhist": 3, "Catholic": 4, "Christian": 5, "Hindu": 6, "Jewish": 7, "Mormon": 8, "Muslim": 9, "Spiritual (non-religious)": 10, "Other": 11, "Prefer not to say": 12, "No preference": 13 };
@@ -50,12 +53,27 @@ exports.saveProfile = async (req, res) => {
         let location_city = null;
         let location_state = null;
         if (location && location.trim()) {
-            const locParts = location.trim().split(",");
-            if (locParts.length < 2 || !locParts[1].trim()) {
-                return res.status(400).json({ error: "Please enter your location as City, State (e.g. Chicago, IL)." });
+            const locParsed = parseCityStateLocation(location);
+            if (!locParsed.ok) {
+                return res.status(400).json({ error: locParsed.error });
             }
-            location_city  = locParts[0].trim();
-            location_state = locParts[1].trim();
+            location_city = locParsed.city;
+            location_state = locParsed.state;
+        }
+
+        let geoLat = null;
+        let geoLng = null;
+        if (location_city && location_state) {
+            try {
+                const geo = await geocodeCityState(location_city, location_state);
+                if (geo) {
+                    geoLat = geo.latitude;
+                    geoLng = geo.longitude;
+                }
+            } catch {
+                geoLat = null;
+                geoLng = null;
+            }
         }
 
         await pool.query(
@@ -85,8 +103,10 @@ exports.saveProfile = async (req, res) => {
                 dating_goals        = COALESCE($23, dating_goals),
                 astrology           = COALESCE($24, astrology),
                 children            = COALESCE($25, children),
-                political           = COALESCE($26, political)
-            WHERE user_id = $27`,
+                political           = COALESCE($26, political),
+                latitude            = COALESCE($27::decimal, latitude),
+                longitude           = COALESCE($28::decimal, longitude)
+            WHERE user_id = $29`,
             [
                 first_name, last_name, location_city, location_state, bio || null, height || null,
                 toId(GENDER, gender), toId(RELIGION, religion), toId(ETHNICITY, ethnicity),
@@ -97,6 +117,8 @@ exports.saveProfile = async (req, res) => {
                 toId(PETS, pets), toId(PERSONALITY, personality),
                 toId(DATING_GOALS, datingGoal), toId(ASTROLOGY, astrology),
                 toId(CHILDREN, children), toId(POLITICAL, politicalStanding),
+                geoLat,
+                geoLng,
                 user_id
             ]
         );
@@ -113,15 +135,28 @@ exports.savePreferences = async (req, res) => {
     if (!user_id) return res.status(400).json({ error: "user_id is required." });
 
     const {
-        genderPref, minAge, maxAge, minHeight, maxHeight,
+        genderPref, genderPrefs, minAge, maxAge, minHeight, maxHeight,
         religionPref, ethnicityPref, politicalPref, childrenPref, datingGoalPref,
         activityPref, familyOrientedPref,
     } = req.body;
 
     try {
-        const genderMap = { "Male": 1, "Man": 1, "Female": 2, "Woman": 2, "Non-binary": 3 };
-        const preferred_gender = (genderPref && genderPref !== "No preference")
-            ? (genderMap[genderPref] || null) : null;
+        const dbPartnerNames = partnerUiLabelsToDbNames(
+            Array.isArray(genderPrefs) && genderPrefs.length > 0
+                ? genderPrefs
+                : genderPref && genderPref !== "No preference" && genderPref !== "Multiple"
+                    ? [genderPref]
+                    : []
+        );
+
+        let preferredGenderTypeIds = [];
+        if (dbPartnerNames.length > 0) {
+            const gRes = await pool.query(
+                `SELECT gender_type_id FROM gender_type WHERE gender_name = ANY($1::text[])`,
+                [dbPartnerNames]
+            );
+            preferredGenderTypeIds = [...new Set(gRes.rows.map((r) => r.gender_type_id))];
+        }
 
         const prefResult = await pool.query(
             `INSERT INTO preferences
@@ -162,12 +197,19 @@ exports.savePreferences = async (req, res) => {
 
         const preference_id = prefResult.rows[0].preference_id;
 
-        await pool.query("DELETE FROM preference_genders WHERE preference_id = $1", [preference_id]);
-        if (preferred_gender) {
-            await pool.query(
-                "INSERT INTO preference_genders (preference_id, gender_type_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                [preference_id, preferred_gender]
-            );
+        /** Client must send genderPrefs[] when multiple; if "Multiple" but array missing/empty, do not wipe DB (avoids losing Woman+NB etc.). */
+        const skipGenderRewrite =
+            genderPref === "Multiple" &&
+            (!Array.isArray(genderPrefs) || genderPrefs.length === 0);
+
+        if (!skipGenderRewrite) {
+            await pool.query("DELETE FROM preference_genders WHERE preference_id = $1", [preference_id]);
+            for (const gid of preferredGenderTypeIds) {
+                await pool.query(
+                    "INSERT INTO preference_genders (preference_id, gender_type_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    [preference_id, gid]
+                );
+            }
         }
 
         res.json({ message: "Preferences saved successfully." });
@@ -196,8 +238,10 @@ exports.getPreferences = async (req, res) => {
                 po.political_affil    AS preferred_political,
                 al.activity_name      AS preferred_activity,
                 fo.family_oriented_name AS preferred_family,
-                (SELECT array_agg(pg.gender_type_id) FILTER (WHERE pg.gender_type_id IS NOT NULL)
-                   FROM preference_genders pg WHERE pg.preference_id = p.preference_id) AS preferred_gender_ids
+                (SELECT COALESCE(array_agg(gt.gender_name ORDER BY gt.gender_type_id), ARRAY[]::text[])
+                   FROM preference_genders pg
+                   JOIN gender_type gt ON gt.gender_type_id = pg.gender_type_id
+                   WHERE pg.preference_id = p.preference_id) AS partner_gender_names
              FROM preferences p
              LEFT JOIN religion_type   rt_pref ON rt_pref.religion_type_id = p.preferred_religion_type_id
              LEFT JOIN ethnicity_type  et_pref ON et_pref.ethnicity_type_id = p.preferred_ethnicity_id
@@ -228,23 +272,25 @@ exports.getPreferences = async (req, res) => {
             return label;
         }
 
-        // seed_data: 1 Man, 2 Woman, 3 Non-binary, 4 Other, 5 Prefer not to say; v4: 6 Open to all
-        const genderIdMap = {
-            1: "Male",
-            2: "Female",
-            3: "Non-binary",
-            4: "No preference",
-            5: "No preference",
-            6: "No preference",
-        };
-        const genderIds = row.preferred_gender_ids || [];
-        const firstGid  = genderIds.length > 0 ? ni(genderIds[0]) : null;
+        const rawNames = Array.isArray(row.partner_gender_names) ? row.partner_gender_names : [];
+        const genderPrefs = [
+            ...new Set(
+                rawNames
+                    .map((n) => dbGenderNameToPartnerUi(n))
+                    .filter(Boolean)
+            ),
+        ];
         const genderPref =
-            firstGid !== null ? (genderIdMap[firstGid] || "No preference") : "No preference";
+            genderPrefs.length === 0
+                ? "No preference"
+                : genderPrefs.length === 1
+                    ? genderPrefs[0]
+                    : "Multiple";
 
         res.json({
             preferences: {
                 genderPref,
+                genderPrefs,
                 minAge:         row.preferred_age_min    || 18,
                 maxAge:         row.preferred_age_max    || 100,
                 minHeight:      row.preferred_height_min || 60,
