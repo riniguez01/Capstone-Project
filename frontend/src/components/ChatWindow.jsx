@@ -15,23 +15,103 @@ function formatMsgTime(iso) {
     }
 }
 
+function formatCooldownLine(endMs) {
+    const remainingMs = Math.max(0, endMs - Date.now());
+    const totalSeconds = Math.floor(remainingMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (totalSeconds > 60) {
+        return `Please wait ${minutes} minutes and ${seconds} seconds before sending another message.`;
+    }
+    return `Please wait ${seconds} seconds before sending another message.`;
+}
+
 function ChatWindow({ match, onBack }) {
     const navigate = useNavigate();
     const { currentUser, token } = useUser();
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState("");
-    const [blocked, setBlocked] = useState(null);
-    const [warning, setWarning] = useState(null);
+    const [banner, setBanner] = useState(null);
+    const [inputShake, setInputShake] = useState(false);
+    const [inputBlockedBorder, setInputBlockedBorder] = useState(false);
     const [isTyping, setIsTyping] = useState(false);
     const socketRef = useRef(null);
     const bottomRef = useRef(null);
     const typingTimer = useRef(null);
+    const bannerTimerRef = useRef(null);
+    const borderTimerRef = useRef(null);
+    const shakeTimerRef = useRef(null);
+    const lastAttemptedTextRef = useRef("");
     const myUserIdRef = useRef(currentUser?.user_id);
+    const inputValueRef = useRef("");
+    const [cooldownTick, setCooldownTick] = useState(0);
     useEffect(() => {
         myUserIdRef.current = currentUser?.user_id;
     }, [currentUser?.user_id]);
+    useEffect(() => {
+        inputValueRef.current = input;
+    }, [input]);
 
     const matchIdNum = match?.match_id != null ? Number(match.match_id) : null;
+    const isOwnEvent = (eventSenderId) =>
+        eventSenderId == null || Number(eventSenderId) === Number(myUserIdRef.current);
+
+    const clearBanner = () => {
+        if (bannerTimerRef.current) {
+            clearTimeout(bannerTimerRef.current);
+            bannerTimerRef.current = null;
+        }
+        setBanner(null);
+    };
+
+    const parseBannerReason = (reasonText) => {
+        const fullText = typeof reasonText === "string" ? reasonText.trim() : "";
+        if (!fullText) return { reason: "", cooldown: "" };
+        const cooldownMatch = fullText.match(/(Please wait .*?before sending another message\.)$/i);
+        if (!cooldownMatch) return { reason: fullText, cooldown: "" };
+        const cooldown = cooldownMatch[1].trim();
+        const reason = fullText.slice(0, cooldownMatch.index).trim();
+        return { reason, cooldown };
+    };
+
+    const showBanner = (type, reasonText, cooldownUntilIso) => {
+        const { reason, cooldown } = parseBannerReason(reasonText);
+        clearBanner();
+        let cooldownEndsAt = null;
+        if (cooldownUntilIso) {
+            const t = new Date(cooldownUntilIso).getTime();
+            if (!Number.isNaN(t)) cooldownEndsAt = t;
+        }
+        setBanner({
+            type,
+            reason,
+            cooldown: cooldownEndsAt != null ? formatCooldownLine(cooldownEndsAt) : cooldown,
+            cooldownEndsAt,
+            visible: false,
+        });
+        requestAnimationFrame(() => {
+            setBanner((prev) => (prev ? { ...prev, visible: true } : null));
+        });
+        bannerTimerRef.current = setTimeout(() => {
+            setBanner(null);
+            bannerTimerRef.current = null;
+        }, type === "block" ? 6000 : 5000);
+    };
+
+    const triggerBlockInputFeedback = () => {
+        setInputShake(true);
+        setInputBlockedBorder(true);
+        if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+        if (borderTimerRef.current) clearTimeout(borderTimerRef.current);
+        shakeTimerRef.current = setTimeout(() => {
+            setInputShake(false);
+            shakeTimerRef.current = null;
+        }, 400);
+        borderTimerRef.current = setTimeout(() => {
+            setInputBlockedBorder(false);
+            borderTimerRef.current = null;
+        }, 2000);
+    };
 
     useEffect(() => {
         if (matchIdNum == null || Number.isNaN(matchIdNum) || !token) return;
@@ -62,6 +142,14 @@ function ChatWindow({ match, onBack }) {
 
         socket.on("new_message", (msg) => {
             const myId = Number(myUserIdRef.current);
+            if (
+                Number(msg.sender_id) === myId &&
+                typeof msg.content === "string" &&
+                msg.content.trim() === (lastAttemptedTextRef.current || "").trim() &&
+                (inputValueRef.current || "").trim() === (lastAttemptedTextRef.current || "").trim()
+            ) {
+                setInput("");
+            }
             setMessages((prev) => [
                 ...prev,
                 {
@@ -73,14 +161,16 @@ function ChatWindow({ match, onBack }) {
             ]);
         });
 
-        socket.on("message_blocked", ({ reason }) => {
-            setBlocked(reason);
-            setTimeout(() => setBlocked(null), 4000);
+        socket.on("message_blocked", ({ reason, sender_id, cooldown_until }) => {
+            if (!isOwnEvent(sender_id)) return;
+            showBanner("block", reason, cooldown_until);
+            setInput((prev) => prev || lastAttemptedTextRef.current);
+            triggerBlockInputFeedback();
         });
 
-        socket.on("safety_prompt", ({ reason }) => {
-            setWarning(reason);
-            setTimeout(() => setWarning(null), 4000);
+        socket.on("safety_prompt", ({ reason, sender_id }) => {
+            if (!isOwnEvent(sender_id)) return;
+            showBanner("warn", reason);
         });
 
         socket.on("user_typing", () => setIsTyping(true));
@@ -91,6 +181,9 @@ function ChatWindow({ match, onBack }) {
         });
 
         return () => {
+            if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+            if (borderTimerRef.current) clearTimeout(borderTimerRef.current);
+            if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
             socket.emit("leave_match", { match_id: matchIdNum });
             socket.disconnect();
         };
@@ -100,14 +193,33 @@ function ChatWindow({ match, onBack }) {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
+    useEffect(() => {
+        if (banner?.cooldownEndsAt == null) return undefined;
+        const id = setInterval(() => setCooldownTick((n) => n + 1), 250);
+        return () => clearInterval(id);
+    }, [banner?.cooldownEndsAt]);
+
     const handleSend = () => {
         const text = input.trim();
         if (!text || !socketRef.current || matchIdNum == null || Number.isNaN(matchIdNum)) return;
-        socketRef.current.emit("send_message", { match_id: matchIdNum, content: text });
-        setInput("");
+        lastAttemptedTextRef.current = text;
+        socketRef.current.emit("send_message", { match_id: matchIdNum, content: text }, (res) => {
+            if (!res || typeof res !== "object") return;
+            if (res.blocked) {
+                showBanner("block", res.reason || "Your message was blocked.", res.cooldown_until);
+                setInput((prev) => prev || lastAttemptedTextRef.current);
+                triggerBlockInputFeedback();
+                return;
+            }
+            if (res.warning) {
+                showBanner("warn", res.warning);
+            }
+            setInput("");
+        });
     };
 
     const handleKeyDown = (e) => {
+        if (banner) clearBanner();
         if (e.key === "Enter") {
             handleSend();
             return;
@@ -142,9 +254,6 @@ function ChatWindow({ match, onBack }) {
                     Plan date
                 </button>
             </header>
-
-            {blocked && <div className="chat-app-banner chat-app-banner--block">{blocked}</div>}
-            {warning && <div className="chat-app-banner chat-app-banner--warn">{warning}</div>}
 
             <div className="chat-app-thread">
                 {messages.map((msg, i) => {
@@ -188,15 +297,42 @@ function ChatWindow({ match, onBack }) {
                 <div ref={bottomRef} className="chat-app-thread-end" />
             </div>
 
+            {banner && (
+                <div
+                    className={`chat-app-banner ${
+                        banner.type === "block" ? "chat-app-banner--block" : "chat-app-banner--warn"
+                    } ${banner.visible ? "chat-app-banner--visible" : ""}`}
+                >
+                    <div className="chat-app-banner-row">
+                        <span className="chat-app-banner-icon" aria-hidden>
+                            {banner.type === "block" ? "✕" : "⚠"}
+                        </span>
+                        <span className="chat-app-banner-text">{banner.reason}</span>
+                    </div>
+                    {banner.type === "block" && (banner.cooldownEndsAt != null || banner.cooldown) && (
+                        <div className="chat-app-banner-cooldown" data-cooldown-tick={cooldownTick}>
+                            {banner.cooldownEndsAt != null ? formatCooldownLine(banner.cooldownEndsAt) : banner.cooldown}
+                        </div>
+                    )}
+                </div>
+            )}
+
             <footer className="chat-app-composer">
-                <div className="chat-app-composer-inner">
+                <div
+                    className={`chat-app-composer-inner ${inputShake ? "chat-app-composer-inner--shake" : ""} ${
+                        inputBlockedBorder ? "chat-app-composer-inner--blocked" : ""
+                    }`}
+                >
                     <input
                         id="chat-message-input"
                         name="message"
                         className="chat-app-input"
                         placeholder="Message…"
                         value={input}
-                        onChange={(e) => setInput(e.target.value)}
+                        onChange={(e) => {
+                            if (banner) clearBanner();
+                            setInput(e.target.value);
+                        }}
                         onKeyDown={handleKeyDown}
                         autoComplete="off"
                     />

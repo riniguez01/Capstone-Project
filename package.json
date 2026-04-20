@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "node --test backend/test/matching.unit.test.js backend/test/feature1.unit.test.js backend/test/feature1.comprehensive.unit.test.js",
+    "test:feature3": "node --test backend/test/feature3.safety.unit.test.js",
     "test:integration": "node --test backend/test/integration/feature1.integration.test.js backend/test/integration/feature1.regression.test.js backend/test/integration/feature1.comprehensive.integration.test.js",
     "test:integration:live": "FEATURE1_INTEGRATION=1 node --test backend/test/integration/feature1.integration.test.js backend/test/integration/feature1.comprehensive.integration.test.js",
     "test:regression": "FEATURE1_REGRESSION=1 node --test backend/test/integration/feature1.regression.test.js backend/test/integration/feature1.comprehensive.integration.test.js",

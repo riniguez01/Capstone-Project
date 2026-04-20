@@ -66,6 +66,8 @@ module.exports = async function generateMatches(user, candidates, shouldRank = t
         return { matches: [], candidateByUserId: new Map() };
     }
 
+    await filterMatches.ensureOpenToAllPartnerGenderTypeId(pool);
+
     const candidatesWithPrefs = await attachCandidatePreferences(candidates);
 
     const filtered = filterMatches(user, candidatesWithPrefs);

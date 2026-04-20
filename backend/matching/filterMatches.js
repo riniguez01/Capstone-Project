@@ -4,8 +4,23 @@ const { normalizePreferredGenderIds } = require("./preferredGenderIds");
 
 const TRUST_ELIMINATION_THRESHOLD = 40;
 
-/** After seed_data (Man…Prefer not to say), Aura_migrations_v4 adds "Open to all" — next serial id is 6. */
-const OPEN_TO_ALL_PARTNER_PREF_GENDER_TYPE_ID = 6;
+let openToAllPartnerGenderTypeId = 6;
+
+async function ensureOpenToAllPartnerGenderTypeId(pool) {
+    if (!pool || typeof pool.query !== "function") return;
+    try {
+        const r = await pool.query(
+            `SELECT gender_type_id FROM gender_type WHERE gender_name = $1 LIMIT 1`,
+            ["Open to all"]
+        );
+        if (r.rows[0] && r.rows[0].gender_type_id != null) {
+            const n = ni(r.rows[0].gender_type_id);
+            if (n !== null) openToAllPartnerGenderTypeId = n;
+        }
+    } catch {
+        /* keep default */
+    }
+}
 
 function normalizeGenderIdList(raw) {
     return normalizePreferredGenderIds(raw);
@@ -13,7 +28,7 @@ function normalizeGenderIdList(raw) {
 
 function prefListTreatsPartnerGenderAsOpenToAll(preferred) {
     const p = normalizeGenderIdList(preferred);
-    return p.some((id) => ni(id) === OPEN_TO_ALL_PARTNER_PREF_GENDER_TYPE_ID);
+    return p.some((id) => ni(id) === ni(openToAllPartnerGenderTypeId));
 }
 
 function getAge(dateOfBirth) {
@@ -147,4 +162,5 @@ function filterMatches(user, candidates) {
 }
 
 filterMatches.TRUST_ELIMINATION_THRESHOLD = TRUST_ELIMINATION_THRESHOLD;
+filterMatches.ensureOpenToAllPartnerGenderTypeId = ensureOpenToAllPartnerGenderTypeId;
 module.exports = filterMatches;

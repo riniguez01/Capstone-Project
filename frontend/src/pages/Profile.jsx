@@ -5,6 +5,7 @@ import { useUser } from "../context/UserContext";
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { API_BASE_URL } from "../config/api";
+import { buildProfileSaveRequestBody } from "../utils/profileSaveBody";
 
 function initialsFromName(name) {
     const parts = (name || "").trim().split(/\s+/).filter(Boolean);
@@ -222,32 +223,7 @@ function Profile() {
             const profileRes = await fetch(`${API_BASE_URL}/profile/save`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                body: JSON.stringify({
-                    name:             profile.name,
-                    location:         profile.location,
-                    bio:              profile.bio,
-                    height:           profile.height,
-                    gender:           profile.gender,
-                    religion:         profile.religion,
-                    ethnicity:        profile.ethnicity,
-                    education:        profile.education,
-                    familyOriented:   profile.familyOriented,
-                    smoker:           profile.smoker,
-                    drinker:          profile.drinker,
-                    coffeeDrinker:    profile.coffeeDrinker,
-                    diet:             profile.diet,
-                    activityLevel:    profile.activityLevel,
-                    musicPref:        profile.musicPref,
-                    gamer:            profile.gamer,
-                    reader:           profile.reader,
-                    travel:           profile.travel,
-                    pets:             profile.pets,
-                    personality:      profile.personality,
-                    datingGoal:       profile.datingGoal,
-                    astrology:        profile.astrology,
-                    children:         profile.children,
-                    politicalStanding: profile.politicalStanding,
-                }),
+                body: JSON.stringify(buildProfileSaveRequestBody(profile)),
             });
 
             const profileData = await profileRes.json();

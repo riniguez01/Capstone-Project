@@ -351,22 +351,56 @@
 
 .chat-app-banner {
     flex-shrink: 0;
-    padding: 0.55rem 0.9rem;
+    padding: 0.6rem 0.9rem 0.65rem;
     font-size: 0.82rem;
     line-height: 1.35;
     font-weight: 600;
+    opacity: 0;
+    transition: opacity 200ms ease;
+    border-left: 4px solid transparent;
+}
+
+.chat-app-banner--visible {
+    opacity: 1;
 }
 
 .chat-app-banner--block {
-    background: rgba(40, 10, 15, 0.88);
-    color: #ffe8ec;
+    background: rgba(168, 20, 44, 0.16);
+    color: #5f101d;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-left-color: #b00020;
 }
 
 .chat-app-banner--warn {
     background: linear-gradient(90deg, rgba(255, 214, 120, 0.95), rgba(255, 236, 200, 0.98));
     color: #5c3d00;
     border-bottom: 1px solid rgba(200, 150, 40, 0.25);
+    border-left-color: #d08a00;
+}
+
+.chat-app-banner-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+}
+
+.chat-app-banner-icon {
+    font-size: 0.9rem;
+    line-height: 1.2;
+    margin-top: 1px;
+}
+
+.chat-app-banner-text {
+    flex: 1;
+}
+
+.chat-app-banner-cooldown {
+    margin-top: 0.25rem;
+    margin-left: 1.35rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    opacity: 0.9;
+    font-variant-numeric: tabular-nums;
 }
 
 .chat-app-thread {
@@ -534,6 +568,39 @@
     padding: 0.25rem 0.35rem 0.25rem 1rem;
     box-shadow: 0 2px 14px rgba(60, 20, 40, 0.1);
     border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.chat-app-composer-inner--blocked {
+    border-color: rgba(176, 0, 32, 0.8);
+    box-shadow: 0 2px 14px rgba(176, 0, 32, 0.24);
+}
+
+.chat-app-composer-inner--shake {
+    animation: chat-input-shake 400ms ease-in-out;
+}
+
+@keyframes chat-input-shake {
+    0% {
+        transform: translateX(0);
+    }
+    16% {
+        transform: translateX(-6px);
+    }
+    33% {
+        transform: translateX(6px);
+    }
+    50% {
+        transform: translateX(-6px);
+    }
+    66% {
+        transform: translateX(6px);
+    }
+    83% {
+        transform: translateX(-6px);
+    }
+    100% {
+        transform: translateX(0);
+    }
 }
 
 .chat-app-input {

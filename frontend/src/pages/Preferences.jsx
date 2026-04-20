@@ -3,6 +3,7 @@ import { useUser } from "../context/UserContext";
 import { useState } from "react";
 import { API_BASE_URL } from "../config/api";
 import PartnerGenderPrefs from "../components/PartnerGenderPrefs";
+import { buildProfileSaveRequestBody } from "../utils/profileSaveBody";
 
 function ToggleGroup({ options, value, onChange }) {
     return (
@@ -23,7 +24,7 @@ function ToggleGroup({ options, value, onChange }) {
 
 function Preferences() {
     const navigate = useNavigate();
-    const { preferences, setPreferences, token, refreshMatches, currentUser } = useUser();
+    const { preferences, setPreferences, profile, token, refreshMatches, refreshAuthProfile, currentUser } = useUser();
     const update = (field, value) => setPreferences((prev) => ({ ...prev, [field]: value }));
 
     const inchesToDisplay = (inches) => {
@@ -44,6 +45,16 @@ function Preferences() {
         }
 
         try {
+            const profileRes = await fetch(`${API_BASE_URL}/profile/save`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify(buildProfileSaveRequestBody(profile)),
+            });
+            const profileData = await profileRes.json().catch(() => ({}));
+            if (!profileRes.ok) {
+                setError(profileData.error || "Failed to save profile.");
+                return;
+            }
             const prefRes = await fetch(`${API_BASE_URL}/profile/preferences`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -68,6 +79,7 @@ function Preferences() {
                 setError(prefData.error || "Failed to save preferences.");
                 return;
             }
+            await refreshAuthProfile();
             await refreshMatches();
             navigate("/matching");
         } catch {

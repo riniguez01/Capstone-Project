@@ -33,6 +33,7 @@ exports.sendMessage = async (req, res) => {
                 blocked:  true,
                 reason:   evaluation.reason,
                 cooldown: evaluation.cooldownApplied,
+                cooldown_until: evaluation.cooldownUntil || null,
             });
         }
 

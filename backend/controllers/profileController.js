@@ -3,32 +3,7 @@ const { ni } = require("../utils/pgCoerce");
 const { partnerUiLabelsToDbNames, dbGenderNameToPartnerUi } = require("../utils/partnerGenderUi");
 const { parseCityStateLocation } = require("../utils/parseCityStateLocation");
 const { geocodeCityState } = require("../services/geocodeCityState");
-
-const GENDER         = { "Male": 1, "Man": 1, "Female": 2, "Woman": 2, "Non-binary": 3 };
-const RELIGION       = { "Atheist": 1, "Agnostic": 2, "Buddhist": 3, "Catholic": 4, "Christian": 5, "Hindu": 6, "Jewish": 7, "Mormon": 8, "Muslim": 9, "Spiritual (non-religious)": 10, "Other": 11, "Prefer not to say": 12, "No preference": 13 };
-const ETHNICITY      = { "Asian": 1, "Black / African American": 2, "Hispanic / Latino": 3, "Middle Eastern": 4, "Native American": 5, "Pacific Islander": 6, "White / Caucasian": 7, "Multiracial": 8, "Other": 9, "Prefer not to say": 10, "No preference": 11 };
-const EDUCATION      = { "High School": 1, "Some College": 2, "Associate's Degree": 3, "Bachelor's Degree": 4, "Master's Degree": 5, "Doctorate / PhD": 6, "Trade / Vocational": 7, "Trade": 7, "Other": 8, "No preference": 9 };
-const FAMILY         = { "Yes": 1, "No": 2, "No preference": 3 };
-const SMOKING        = { "Yes": 1, "No": 2, "Occasionally": 3 };
-const DRINKING       = { "Yes": 1, "No": 2, "Social": 3 };
-const COFFEE         = { "Yes": 1, "No": 2 };
-const DIET           = { "Omnivore": 1, "Vegetarian": 2, "Vegan": 3, "Other": 4 };
-const ACTIVITY       = { "Low": 1, "Medium": 2, "High": 3, "No preference": 4 };
-const MUSIC          = { "Pop": 1, "Hip-Hop / Rap": 2, "R&B / Soul": 3, "Rock": 4, "Country": 5, "Electronic / EDM": 6, "Jazz / Blues": 7, "Classical": 8, "Latin": 9, "Everything": 10, "Other": 11 };
-const GAMER          = { "Yes": 1, "No": 2, "Casual": 3 };
-const READER         = { "Yes": 1, "No": 2, "Occasionally": 3 };
-const TRAVEL         = { "Love it": 1, "Occasionally": 2, "Not really": 3 };
-const PETS           = { "Love animals": 1, "Have pets": 2, "Allergic": 3, "Not a fan": 4, "Neutral": 5 };
-const PERSONALITY    = { "Introvert": 1, "Extrovert": 2, "Ambivert": 3 };
-const DATING_GOALS   = { "Casual": 1, "Serious": 2, "Long-term": 3, "No preference": 4 };
-const ASTROLOGY      = { "Aries": 1, "Taurus": 2, "Gemini": 3, "Cancer": 4, "Leo": 5, "Virgo": 6, "Libra": 7, "Scorpio": 8, "Sagittarius": 9, "Capricorn": 10, "Aquarius": 11, "Pisces": 12 };
-const CHILDREN       = { "Want kids": 1, "Have kids": 2, "Don't want kids": 3, "Open": 4, "No preference": 5 };
-const POLITICAL      = { "Very Liberal": 1, "Liberal": 2, "Moderate": 3, "Conservative": 4, "Very Conservative": 5, "Apolitical": 6, "Prefer not to say": 7, "No preference": 8 };
-
-function toId(map, label) {
-    if (!label || label === "") return null;
-    return map[label] ?? null;
-}
+const { resolveProfileUserFieldIds, resolvePreferenceFieldIds } = require("../utils/resolveLookupIdsByName");
 
 exports.saveProfile = async (req, res) => {
     const user_id = req.user?.id;
@@ -76,6 +51,29 @@ exports.saveProfile = async (req, res) => {
             }
         }
 
+        const ids = await resolveProfileUserFieldIds(pool, {
+            gender,
+            religion,
+            ethnicity,
+            education,
+            familyOriented,
+            smoker,
+            drinker,
+            coffeeDrinker,
+            diet,
+            activityLevel,
+            musicPref,
+            gamer,
+            reader,
+            travel,
+            pets,
+            personality,
+            datingGoal,
+            astrology,
+            children,
+            politicalStanding,
+        });
+
         await pool.query(
             `UPDATE users SET
                 first_name          = COALESCE($1,  first_name),
@@ -109,14 +107,26 @@ exports.saveProfile = async (req, res) => {
             WHERE user_id = $29`,
             [
                 first_name, last_name, location_city, location_state, bio || null, height || null,
-                toId(GENDER, gender), toId(RELIGION, religion), toId(ETHNICITY, ethnicity),
-                toId(EDUCATION, education), toId(FAMILY, familyOriented),
-                toId(SMOKING, smoker), toId(DRINKING, drinker), toId(COFFEE, coffeeDrinker),
-                toId(DIET, diet), toId(ACTIVITY, activityLevel), toId(MUSIC, musicPref),
-                toId(GAMER, gamer), toId(READER, reader), toId(TRAVEL, travel),
-                toId(PETS, pets), toId(PERSONALITY, personality),
-                toId(DATING_GOALS, datingGoal), toId(ASTROLOGY, astrology),
-                toId(CHILDREN, children), toId(POLITICAL, politicalStanding),
+                ids.gender_identity,
+                ids.religion_id,
+                ids.ethnicity_id,
+                ids.education_career_id,
+                ids.family_oriented,
+                ids.smoking_id,
+                ids.drinking_id,
+                ids.coffee_id,
+                ids.diet_id,
+                ids.activity_level,
+                ids.music,
+                ids.gamer_id,
+                ids.reader_id,
+                ids.travel_id,
+                ids.pet_interest,
+                ids.personality_type,
+                ids.dating_goals,
+                ids.astrology_id,
+                ids.children_id,
+                ids.political,
                 geoLat,
                 geoLng,
                 user_id
@@ -158,6 +168,16 @@ exports.savePreferences = async (req, res) => {
             preferredGenderTypeIds = [...new Set(gRes.rows.map((r) => r.gender_type_id))];
         }
 
+        const prefIds = await resolvePreferenceFieldIds(pool, {
+            religionPref,
+            ethnicityPref,
+            politicalPref,
+            childrenPref,
+            datingGoalPref,
+            activityPref,
+            familyOrientedPref,
+        });
+
         const prefResult = await pool.query(
             `INSERT INTO preferences
                 (user_id, preferred_age_min, preferred_age_max,
@@ -185,19 +205,18 @@ exports.savePreferences = async (req, res) => {
                 maxAge    || 100,
                 minHeight || 60,
                 maxHeight || 80,
-                toId(RELIGION,     religionPref),
-                toId(ETHNICITY,    ethnicityPref),
-                toId(POLITICAL,    politicalPref),
-                toId(CHILDREN,     childrenPref),
-                toId(DATING_GOALS, datingGoalPref),
-                toId(ACTIVITY, activityPref),
-                toId(FAMILY, familyOrientedPref),
+                prefIds.preferred_religion_type_id,
+                prefIds.preferred_ethnicity_id,
+                prefIds.preferred_political_affil,
+                prefIds.preferred_want_children,
+                prefIds.preferred_dating_goals,
+                prefIds.preferred_activity_level,
+                prefIds.preferred_family_oriented,
             ]
         );
 
         const preference_id = prefResult.rows[0].preference_id;
 
-        /** Client must send genderPrefs[] when multiple; if "Multiple" but array missing/empty, do not wipe DB (avoids losing Woman+NB etc.). */
         const skipGenderRewrite =
             genderPref === "Multiple" &&
             (!Array.isArray(genderPrefs) || genderPrefs.length === 0);
@@ -260,13 +279,11 @@ exports.getPreferences = async (req, res) => {
 
         const row = result.rows[0];
 
-        /** Profile.jsx partner <select>s use value="" for open; DB uses lookup label "No preference". */
         function partnerSelectOpenLabel(label) {
             if (label == null || label === "" || label === "No preference") return "";
             return label;
         }
 
-        /** Partner ToggleGroups use "No preference" as explicit value when nothing chosen. */
         function partnerToggleLabel(label) {
             if (label == null || label === "") return "No preference";
             return label;
