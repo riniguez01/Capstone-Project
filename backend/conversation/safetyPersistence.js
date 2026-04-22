@@ -84,6 +84,12 @@ async function ensureConversationLoaded(matchId) {
     if (mid == null) return;
     if (loadedFromDb.has(mid)) return;
 
+    if (process.env.FEATURE3_TEST_MODE === "1") {
+        getConversation(mid);
+        loadedFromDb.add(mid);
+        return;
+    }
+
     try {
         const res = await pool.query(
             `SELECT engine_snapshot,
@@ -133,6 +139,9 @@ async function ensureConversationLoaded(matchId) {
 async function persistConversation(matchId) {
     const mid = normalizeMatchId(matchId);
     if (mid == null) return;
+    if (process.env.FEATURE3_TEST_MODE === "1") {
+        return;
+    }
     const conv = getConversation(mid);
     const snapshot = _serialize(conv);
     const escalation =

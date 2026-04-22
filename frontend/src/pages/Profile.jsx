@@ -1,9 +1,11 @@
 import Navbar from "../components/Navbar";
+import PartnerGenderPrefs from "../components/PartnerGenderPrefs";
 import ShieldRating from "../components/ShieldRating";
 import { useUser } from "../context/UserContext";
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { API_BASE_URL } from "../config/api";
+import { buildProfileSaveRequestBody } from "../utils/profileSaveBody";
 
 function initialsFromName(name) {
     const parts = (name || "").trim().split(/\s+/).filter(Boolean);
@@ -79,7 +81,26 @@ function Profile() {
     const updatePref = (field, value) => setPreferences((prev) => ({ ...prev, [field]: value }));
 
     const td = profile.trustDisplay;
-    const shieldCount = td?.shield_count != null ? td.shield_count : null;
+    const num = (v) => {
+        if (v == null || v === "") return null;
+        const x = Number(v);
+        return Number.isFinite(x) ? x : null;
+    };
+    const internalToShield = (internalScore) => {
+        const n = num(internalScore);
+        if (n == null) return null;
+        return Math.max(1, Math.min(5, Math.round(n / 20)));
+    };
+    const fromTrustDisplay = num(td?.shield_count);
+    const shieldCount =
+        fromTrustDisplay != null
+            ? Math.max(1, Math.min(5, Math.round(fromTrustDisplay)))
+            : internalToShield(profile.trustScore);
+    const trustLabel = shieldCount == null
+        ? "No score"
+        : td?.label && td.label !== "New User"
+            ? td.label
+            : "";
 
     const inchesToDisplay = (inches) => {
         const ft = Math.floor(inches / 12);
@@ -94,7 +115,7 @@ function Profile() {
 
     const displayNameForInitials = nameForInitials(profile, currentUser);
 
-    const handleImageChange = (e) => {
+    const handleImageChange = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
         if (lastBlobUrlRef.current) {
@@ -105,6 +126,41 @@ function Profile() {
         const url = URL.createObjectURL(file);
         lastBlobUrlRef.current = url;
         updateProfile("profilePic", url);
+
+        if (!token) return;
+
+        try {
+            const dataUrl = await readFileAsDataUrl(file);
+            const photoRes = await fetch(`${API_BASE_URL}/profile/photo`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ photo_url: dataUrl }),
+            });
+            const photoData = await photoRes.json().catch(() => ({}));
+            if (!photoRes.ok) {
+                setSaveError(photoData.error || "Failed to save photo.");
+                return;
+            }
+            const savedUrl = photoData.photo_url;
+            if (lastBlobUrlRef.current) {
+                URL.revokeObjectURL(lastBlobUrlRef.current);
+                lastBlobUrlRef.current = null;
+            }
+            pendingPhotoFileRef.current = null;
+            updateProfile("profilePic", savedUrl);
+            setSaveError(null);
+
+            const meRes = await fetch(`${API_BASE_URL}/auth/me`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (meRes.ok) {
+                const meData = await meRes.json();
+                if (meData?.user) syncSessionFromAuthUser(meData.user);
+            }
+            await refreshMatches();
+        } catch {
+            setSaveError("Could not save photo. Check your connection, then try again or click Save.");
+        }
     };
 
     useEffect(() => () => {
@@ -167,32 +223,7 @@ function Profile() {
             const profileRes = await fetch(`${API_BASE_URL}/profile/save`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                body: JSON.stringify({
-                    name:             profile.name,
-                    location:         profile.location,
-                    bio:              profile.bio,
-                    height:           profile.height,
-                    gender:           profile.gender,
-                    religion:         profile.religion,
-                    ethnicity:        profile.ethnicity,
-                    education:        profile.education,
-                    familyOriented:   profile.familyOriented,
-                    smoker:           profile.smoker,
-                    drinker:          profile.drinker,
-                    coffeeDrinker:    profile.coffeeDrinker,
-                    diet:             profile.diet,
-                    activityLevel:    profile.activityLevel,
-                    musicPref:        profile.musicPref,
-                    gamer:            profile.gamer,
-                    reader:           profile.reader,
-                    travel:           profile.travel,
-                    pets:             profile.pets,
-                    personality:      profile.personality,
-                    datingGoal:       profile.datingGoal,
-                    astrology:        profile.astrology,
-                    children:         profile.children,
-                    politicalStanding: profile.politicalStanding,
-                }),
+                body: JSON.stringify(buildProfileSaveRequestBody(profile)),
             });
 
             const profileData = await profileRes.json();
@@ -206,6 +237,7 @@ function Profile() {
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
                 body: JSON.stringify({
                     genderPref:     preferences.genderPref,
+                    genderPrefs:    preferences.genderPrefs ?? [],
                     minAge:         preferences.minAge,
                     maxAge:         preferences.maxAge,
                     minHeight:      preferences.minHeight,
@@ -258,7 +290,7 @@ function Profile() {
             <div className="container d-flex justify-content-center align-items-center text-center faded-background min-vh-100 min-vw-100">
                 <div className="login-card p-4 text-center mb-4">
 
-                    <div className="bg-white profile-photo-wrap">
+                    <div className="bg-white profile-photo-wrap profile-polaroid">
                         <div
                             className="profile-avatar-shell"
                             onClick={() => document.getElementById("picUpload").click()}
@@ -293,11 +325,11 @@ function Profile() {
                         <div className="text-muted small mb-2 bi-camera profile-change-photo" onClick={() => document.getElementById("picUpload").click()}>
                             -Change Photo
                         </div>
-                        <div className="pb-2 text-center">
+                        <div className="pb-2 text-center profile-trust-panel">
                             <div className="small text-white-50 mb-1">Safety trust</div>
-                            <ShieldRating rating={td?.label === "New User" ? null : shieldCount} />
+                            <ShieldRating rating={shieldCount} />
                             <div className="small text-white mt-1 fw-semibold">
-                                {td?.label ?? "New User"}
+                                {trustLabel}
                             </div>
                             {td?.dates_reviewed != null && (
                                 <div className="small text-white-50">
@@ -310,16 +342,25 @@ function Profile() {
                                 </div>
                             )}
                             {td?.show_numeric && (
-                                <div className="small text-white-50 mt-1" style={{ maxWidth: 260, margin: "0 auto" }}>
+                                <div className="small text-white-50 mt-1 profile-trust-footnote">
                                     Shields reflect a rolling average; one difficult date may not change the count.
                                 </div>
                             )}
-                            <div className="small text-white-50 mt-2" style={{ maxWidth: 280, margin: "0 auto", lineHeight: 1.35 }}>
-                                If a date check-in affects your score, we&apos;ll notify you in the bell.
-                                {" "}
-                                <Link to="/appeals" className="text-white text-decoration-underline">Trust appeals</Link>
-                                {appealEligible === true ? " — you can submit one now." : " — available when eligible."}
-                            </div>
+                        </div>
+                        <div className="profile-polaroid-title">Profile</div>
+                    </div>
+
+                    <div className="profile-appeal-card mt-3 mb-3">
+                        <div className="small text-muted">
+                            If a date check-in affects your score, we&apos;ll notify you in the bell.
+                        </div>
+                        <div className="mt-2">
+                            <Link to="/appeals" className="btn btn-outline-danger btn-sm">
+                                Submit trust appeal
+                            </Link>
+                        </div>
+                        <div className="small text-muted mt-2">
+                            {appealEligible === true ? "You are currently eligible to submit an appeal." : "Appeals are available when eligible."}
                         </div>
                     </div>
 
@@ -552,8 +593,15 @@ function Profile() {
                     <h5 className="section-title">Partner Preferences</h5>
 
                     <div className="mb-3 text-start">
-                        <label>Gender Preference</label>
-                        <ToggleGroup options={["Male", "Female", "Non-binary", "No preference"]} value={preferences.genderPref} onChange={(v) => updatePref("genderPref", v)} />
+                        <label>Partner gender (pick one or more types, or Open to all genders)</label>
+                        <PartnerGenderPrefs
+                            genderPrefs={preferences.genderPrefs}
+                            onChange={(next) => setPreferences((prev) => ({
+                                ...prev,
+                                genderPrefs: next,
+                                genderPref: next.length === 0 ? "No preference" : next.length === 1 ? next[0] : "Multiple",
+                            }))}
+                        />
                     </div>
 
                     <div className="mb-3 text-start">

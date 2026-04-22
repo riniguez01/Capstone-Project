@@ -1,25 +1,48 @@
 import Navbar from "../components/Navbar";
 import AuraPlusHint from "../components/AuraPlusHint";
 import ShieldRating from "../components/ShieldRating";
+import MatchReportModal from "../components/MatchReportModal";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "../context/UserContext";
 import { API_BASE_URL } from "../config/api";
 
-/** Prefer API `trust_shield_display`; else derive from legacy fields. */
+const MIN_DATES_FOR_PUBLIC = 3;
+
+function MatchReasonChips({ reasons }) {
+    if (!Array.isArray(reasons) || reasons.length === 0) return null;
+    return (
+        <div className="match-card__reasons">
+            <div className="match-card__reasons-title">Why you match</div>
+            <div className="match-card__reasons-list">
+                {reasons.map((r) => (
+                    <span key={r} className="match-chip-reason">{r}</span>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function matchCardTrustLabel(user, shieldRating) {
+    if (shieldRating == null) return "New User";
+    if (user?.trust_label === "New User") return "";
+    return user?.trust_label || "";
+}
+
 function matchCardShieldRating(user) {
     if (!user) return null;
-    const tsd = user.trust_shield_display;
-    if (tsd != null && tsd !== "") {
-        const n = Number(tsd);
-        if (Number.isFinite(n) && n >= 1 && n <= 5) return Math.round(n);
-    }
 
     const num = (v) => {
         if (v == null || v === "") return null;
         const x = Number(v);
         return Number.isFinite(x) ? x : null;
     };
+    const datesReviewed = num(user.trust_dates_reviewed ?? user.dates_reviewed) ?? 0;
+
+    const fromDisplay = num(user.trust_shield_display);
+    if (fromDisplay != null && fromDisplay >= 1 && fromDisplay <= 5) {
+        return Math.round(fromDisplay);
+    }
 
     const fromDirect = num(user.shield_rating ?? user.starRating);
     if (fromDirect != null && fromDirect >= 1 && fromDirect <= 5) {
@@ -27,7 +50,7 @@ function matchCardShieldRating(user) {
     }
 
     const fromPub = num(user.public_trust_rating);
-    if (fromPub != null) {
+    if (fromPub != null && datesReviewed >= MIN_DATES_FOR_PUBLIC) {
         return Math.max(1, Math.min(5, Math.round(fromPub)));
     }
 
@@ -49,14 +72,17 @@ function InfoRow({ icon, text }) {
     );
 }
 
-function MatchCard({ user, onHeart, onReject, likesLeft, heartPending, swipeHeartOut }) {
+function MatchCard({ user, onHeart, onReject, likesLeft, heartPending, swipeHeartOut, viewerProfile, viewerPreferences, matchRank, matchTotal }) {
     const [animating, setAnimating] = useState(null);
+    const [reportOpen, setReportOpen] = useState(false);
     const outOfLikes = likesLeft !== null && likesLeft <= 0;
     const heartLocked = outOfLikes || heartPending;
+    const shieldRating = matchCardShieldRating(user);
+    const trustLabel = matchCardTrustLabel(user, shieldRating);
 
     const fire = (dir, cb) => {
         setAnimating(dir);
-        setTimeout(() => { setAnimating(null); cb(); }, 350);
+        setTimeout(() => { setAnimating(null); cb(); }, 0);
     };
 
     const cardClass = [
@@ -66,6 +92,7 @@ function MatchCard({ user, onHeart, onReject, likesLeft, heartPending, swipeHear
     ].filter(Boolean).join(" ");
 
     return (
+        <>
         <div className={cardClass}>
             <div className="match-card__photo-wrap">
                 <img src={user.image} alt={user.name} className="match-card__photo" />
@@ -78,8 +105,9 @@ function MatchCard({ user, onHeart, onReject, likesLeft, heartPending, swipeHear
                         <div className="match-card__location">📍 {user.location}</div>
                     )}
                 </div>
-                <div className="match-card__rating-badge match-card__rating-badge--corner" title={user.trust_label ?? ""}>
-                    <ShieldRating variant="onDark" rating={matchCardShieldRating(user)} />
+                <div className="match-card__rating-badge match-card__rating-badge--corner" title={trustLabel}>
+                    <ShieldRating variant="onDark" rating={shieldRating} />
+                    <span className="match-card__trust-label">{trustLabel}</span>
                 </div>
             </div>
 
@@ -109,6 +137,8 @@ function MatchCard({ user, onHeart, onReject, likesLeft, heartPending, swipeHear
                     <div className="match-card__bio">"{user.bio}"</div>
                 )}
 
+                <MatchReasonChips reasons={user.match_reasons} />
+
                 {user.score !== undefined && (
                     <div className="match-card__score">Match score: {user.score}</div>
                 )}
@@ -130,7 +160,23 @@ function MatchCard({ user, onHeart, onReject, likesLeft, heartPending, swipeHear
                     title={outOfLikes ? "Daily like limit reached" : heartPending ? "Sending…" : "Like"}
                 >❤️</button>
             </div>
+
+            <div className="match-card__report">
+                <button type="button" className="btn-match-report" onClick={() => setReportOpen(true)}>
+                    Why this match?
+                </button>
+            </div>
         </div>
+        <MatchReportModal
+            open={reportOpen}
+            onClose={() => setReportOpen(false)}
+            match={user}
+            viewerProfile={viewerProfile}
+            viewerPreferences={viewerPreferences}
+            matchRank={matchRank}
+            matchTotal={matchTotal}
+        />
+        </>
     );
 }
 
@@ -158,20 +204,32 @@ function LikedPortal({ likedUsers, onOpenChat }) {
 }
 
 export default function Matching() {
-    const { matches, matchesLoading, matchesError, currentUser, token, likedUsers, addLikedUser, likesLeft, setLikesLeft, tierLimit } = useUser();
+    const {
+        matches, matchesLoading, matchesError, currentUser, token, likedUsers, addLikedUser,
+        likesLeft, setLikesLeft, tierLimit, profile, preferences, refreshMatches,
+    } = useUser();
     const [currentIndex, setCurrentIndex] = useState(0);
     const [showItsMatch, setShowItsMatch] = useState(false);
+    const [itsMatchPartner, setItsMatchPartner] = useState(null);
     const [heartPending, setHeartPending] = useState(false);
     const [likeActionError, setLikeActionError] = useState("");
     const [likeLimitAuraPlus, setLikeLimitAuraPlus] = useState(false);
     const [swipeHeartOut, setSwipeHeartOut] = useState(false);
+    const [rejectError, setRejectError] = useState("");
     const navigate = useNavigate();
 
     useEffect(() => { if (!currentUser) navigate("/"); }, [currentUser, navigate]);
     useEffect(() => { setCurrentIndex(0); }, [matches]);
     useEffect(() => {
+        if (!currentUser?.user_id || !token) return;
+        if (currentIndex > 0 && currentIndex >= matches.length && matches.length > 0) {
+            refreshMatches({ silent: true });
+        }
+    }, [currentIndex, matches.length, currentUser?.user_id, token, refreshMatches]);
+    useEffect(() => {
         setLikeActionError("");
         setLikeLimitAuraPlus(false);
+        setRejectError("");
     }, [currentIndex]);
 
     const handleHeart = () => {
@@ -211,13 +269,16 @@ export default function Matching() {
                 setTimeout(() => {
                     addLikedUser(liked);
                     if (data.match_created) {
+                        setItsMatchPartner({
+                            ...liked,
+                            match_id: data.match_id != null ? data.match_id : liked.match_id,
+                        });
                         setShowItsMatch(true);
-                        setTimeout(() => setShowItsMatch(false), 2000);
                     }
                     setCurrentIndex((prev) => prev + 1);
                     setSwipeHeartOut(false);
                     setHeartPending(false);
-                }, 350);
+                }, 0);
             })
             .catch(() => {
                 setLikeActionError("Could not connect to server.");
@@ -225,7 +286,32 @@ export default function Matching() {
             });
     };
 
-    const handleReject   = () => setCurrentIndex(prev => prev + 1);
+    const handleReject = () => {
+        const rejected = matches[currentIndex];
+        if (!rejected || !currentUser || !token) return;
+        setRejectError("");
+        fetch(`${API_BASE_URL}/matches/${currentUser.user_id}/reject`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ rejected_user_id: rejected.user_id }),
+        })
+            .then(async (res) => {
+                let data = {};
+                try {
+                    data = await res.json();
+                } catch {
+                    data = {};
+                }
+                if (!res.ok) {
+                    setRejectError(data.error || "Could not record pass.");
+                    return;
+                }
+                setCurrentIndex((prev) => prev + 1);
+            })
+            .catch(() => {
+                setRejectError("Could not connect to server.");
+            });
+    };
     const handleOpenChat = (user) => navigate("/chat", { state: { selectedMatch: user } });
 
     const showIdleAuraPlus =
@@ -259,10 +345,50 @@ export default function Matching() {
         <>
             <Navbar />
 
-            {showItsMatch && (
-                <div className="match-overlay">
-                    <div className="match-overlay__icon">❤️</div>
-                    <div className="match-overlay__text">It's a match!</div>
+            {showItsMatch && itsMatchPartner && (
+                <div className="match-overlay match-overlay--celebrate" role="dialog" aria-modal="true" aria-labelledby="its-a-match-title">
+                    <div className="match-overlay__glow" aria-hidden />
+                    <div className="match-overlay__hearts" aria-hidden>❤️</div>
+                    <h2 id="its-a-match-title" className="match-overlay__title">It&apos;s a Match!</h2>
+                    <p className="match-overlay__sub">
+                        You and <strong className="match-overlay__name-strong">{itsMatchPartner.first_name || itsMatchPartner.name}</strong>
+                    </p>
+                    <div className="match-overlay__photo-shell">
+                        <img src={itsMatchPartner.image} alt="" className="match-overlay__photo" />
+                    </div>
+                    <div className="match-overlay__actions">
+                        <button
+                            type="button"
+                            className="match-overlay__btn match-overlay__btn--primary"
+                            onClick={() => {
+                                setShowItsMatch(false);
+                                const m = itsMatchPartner;
+                                setItsMatchPartner(null);
+                                navigate("/chat", {
+                                    state: {
+                                        selectedMatch: {
+                                            match_id: m.match_id,
+                                            user_id: m.user_id,
+                                            name: m.name,
+                                            image: m.image,
+                                        },
+                                    },
+                                });
+                            }}
+                        >
+                            Say hi
+                        </button>
+                        <button
+                            type="button"
+                            className="match-overlay__btn match-overlay__btn--ghost"
+                            onClick={() => {
+                                setShowItsMatch(false);
+                                setItsMatchPartner(null);
+                            }}
+                        >
+                            Keep swiping
+                        </button>
+                    </div>
                 </div>
             )}
 
@@ -280,24 +406,15 @@ export default function Matching() {
 
                 {showIdleAuraPlus && <AuraPlusHint className="aura-plus-hint--quiet" />}
 
-                {likeActionError && (
-                    <div className="match-like-alert" role="alert">{likeActionError}</div>
+                {(likeActionError || rejectError) && (
+                    <div className="match-like-alert" role="alert">{likeActionError || rejectError}</div>
                 )}
                 {likeLimitAuraPlus && <AuraPlusHint />}
 
                 {allSwiped || matches.length === 0 ? (
                     <div className="match-empty">
-                        <div className="match-empty__icon">
-                            {matches.length === 0 ? "🔍" : "✨"}
-                        </div>
-                        <div className="match-empty__title">
-                            {matches.length === 0 ? "No matches found yet" : "You've seen everyone!"}
-                        </div>
-                        <div className="match-empty__subtitle">
-                            {matches.length === 0
-                                ? "Complete your profile to get better matches."
-                                : "Check back tomorrow for new matches."}
-                        </div>
+                        <div className="match-empty__icon">✨</div>
+                        <div className="match-empty__title">Check back tomorrow — new matches are on the way.</div>
                     </div>
                 ) : (
                     <MatchCard
@@ -308,6 +425,10 @@ export default function Matching() {
                         likesLeft={likesLeft}
                         heartPending={heartPending}
                         swipeHeartOut={swipeHeartOut}
+                        viewerProfile={profile}
+                        viewerPreferences={preferences}
+                        matchRank={currentIndex + 1}
+                        matchTotal={matches.length}
                     />
                 )}
 

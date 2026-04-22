@@ -87,12 +87,17 @@ function initSocketServer(httpServer) {
                 if (evaluation.decision === "block") {
                     return socket.emit("message_blocked", {
                         reason:   evaluation.reason,
-                        category: evaluation.category
+                        category: evaluation.category,
+                        sender_id: uid,
+                        cooldown_until: evaluation.cooldownUntil || null
                     });
                 }
 
                 if (evaluation.decision === "prompt") {
-                    socket.emit("safety_prompt", { reason: evaluation.reason });
+                    socket.emit("safety_prompt", {
+                        reason: evaluation.reason,
+                        sender_id: uid
+                    });
                 }
 
                 const result = await pool.query(

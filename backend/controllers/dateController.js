@@ -124,6 +124,7 @@ exports.sendDateRequest = async (req, res) => {
                 blocked:  true,
                 reason:   safety.reason,
                 cooldown: safety.cooldownApplied,
+                cooldown_until: safety.cooldownUntil || null,
             });
         }
 

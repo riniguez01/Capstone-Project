@@ -63,6 +63,55 @@ function scoreValuesAndRelationship(userA, userB) {
     return clamp01(avg([religion, familyOriented, political, datingGoals, children, education]));
 }
 
+function buildCompatibilityReasons(userA, userB) {
+    const out = [];
+    const push = (s) => {
+        if (s && !out.includes(s)) out.push(s);
+    };
+
+    if (eq(userA.religion_id, userB.religion_id) === 1) push("Shared faith");
+    if (eq(userA.dating_goals, userB.dating_goals) === 1) push("Same dating goals");
+    if (eq(userA.children, userB.children) === 1) push("Aligned on kids");
+
+    const pol = ordinal3(userA.political, userB.political);
+    if (pol === 1) push("Political views line up");
+    else if (pol === 0.5) push("Close on politics");
+
+    if (eq(userA.family_oriented, userB.family_oriented) === 1) push("Same family mindset");
+    if (eq(userA.education_career_id, userB.education_career_id) === 1) push("Similar education path");
+
+    if (eq(userA.music, userB.music) === 1) push("Same music taste");
+
+    const tr = ordinal3(userA.travel, userB.travel);
+    if (tr === 1) push("Same travel energy");
+    else if (tr === 0.5) push("Similar travel style");
+
+    if (eq(userA.pet_interest, userB.pet_interest) === 1) push("Pet vibes in sync");
+    if (eq(userA.reader, userB.reader) === 1) push("Both into reading");
+    if (eq(userA.gamer, userB.gamer) === 1) push("Both into gaming");
+
+    const act = ordinal3(userA.activity_level, userB.activity_level);
+    if (act === 1) push("Similar activity level");
+    else if (act === 0.5) push("Close on activity level");
+
+    const drink = ordinal3(userA.drinking_id, userB.drinking_id);
+    if (drink === 1) push("Same drinking style");
+    else if (drink === 0.5) push("Close on drinking");
+
+    const smoke = ordinal3(userA.smoking_id, userB.smoking_id);
+    if (smoke === 1) push("Same take on smoking");
+    else if (smoke === 0.5) push("Close on smoking");
+
+    if (eq(userA.diet_id, userB.diet_id) === 1) push("Same diet");
+    if (eq(userA.coffee_id, userB.coffee_id) === 1) push("Coffee habits match");
+
+    const p = personalityCompat(userA.personality_type, userB.personality_type);
+    if (p >= 0.99) push("Same personality type");
+    else if (p >= 0.75) push("Personality vibe fits");
+
+    return out;
+}
+
 module.exports = function scoreMatch(userA, userB) {
     const interests = scoreInterests(userA, userB);
     const lifestyle = scoreLifestyle(userA, userB);
@@ -77,6 +126,7 @@ module.exports = function scoreMatch(userA, userB) {
         values * weights.values;
 
     const totalScore = Math.round(clamp01(totalScore01) * 100);
+    const reasons = buildCompatibilityReasons(userA, userB);
 
     return {
         totalScore,
@@ -85,7 +135,8 @@ module.exports = function scoreMatch(userA, userB) {
             lifestyle: Math.round(lifestyle * 100),
             personality: Math.round(personality * 100),
             values: Math.round(values * 100),
-            weights
+            weights,
+            reasons,
         }
     };
 };

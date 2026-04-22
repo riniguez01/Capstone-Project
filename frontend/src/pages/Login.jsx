@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useUser } from "../context/UserContext";
 import { API_BASE_URL } from "../config/api";
 
@@ -73,10 +73,14 @@ function Login() {
                     </button>
                 </form>
                 <div className="mt-3 small">
-                    <p className="mb-1 text-decoration-underline">Forgot Password?</p>
+                    <p className="mb-1">
+                        <Link to="/forgot-password" className="text-dark text-decoration-underline">
+                            Forgot password?
+                        </Link>
+                    </p>
                     <p>
                         Don't have account?{" "}
-                        <a href="/signup" className="text-dark fw-bold">Sign Up</a>
+                        <Link to="/signup" className="text-dark fw-bold">Sign Up</Link>
                     </p>
                 </div>
             </div>

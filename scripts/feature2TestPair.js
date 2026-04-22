@@ -13,6 +13,8 @@
 
 const path = require("path");
 const { Client } = require("pg");
+const { clearFeatureCrossDiscoverySwipes } = require("./clearFeatureCrossDiscoverySwipes");
+const { ensureTestUserTrustDatesReviewed } = require("./ensureTestUserTrustDatesReviewed");
 
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 require("dotenv").config({ path: path.join(__dirname, "..", "backend", ".env") });
@@ -634,6 +636,11 @@ async function cmdSeed() {
         }
 
         const matchId = await ensureMutualMatchSafe(client, ids[0], ids[1]);
+        const cleared = await clearFeatureCrossDiscoverySwipes(client);
+        if (cleared > 0) {
+            console.log(`Cleared ${cleared} cross-demo swipe row(s) so Feature2/3 discovery stacks stay aligned.`);
+        }
+        await ensureTestUserTrustDatesReviewed(client);
         await client.query("COMMIT");
         printSuccess(matchId, ids[0], ids[1]);
     } catch (e) {
@@ -675,6 +682,11 @@ async function cmdReset() {
         await resetFeature2TrustState(client, idA, idB);
         await clearMatchDataOnly(client, idA, idB);
         const matchId = await ensureMutualMatchSafe(client, idA, idB);
+        const cleared = await clearFeatureCrossDiscoverySwipes(client);
+        if (cleared > 0) {
+            console.log(`Cleared ${cleared} cross-demo swipe row(s) so Feature 2/3 discovery stacks stay aligned.`);
+        }
+        await ensureTestUserTrustDatesReviewed(client);
         await client.query("COMMIT");
         printSuccess(matchId, idA, idB);
     } catch (e) {

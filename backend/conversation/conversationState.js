@@ -107,12 +107,22 @@ function isOnCooldown(matchId, senderId) {
 function applyCooldown(matchId, senderId, minutes = 2) {
     const id = normalizeMatchId(matchId);
     if (id == null) return;
-    const until = new Date(Date.now() + minutes * 60 * 1000);
-    const conv  = getConversation(id);
+    const now = Date.now();
+    const addMs = minutes * 60 * 1000;
+    const conv = getConversation(id);
+    const sid = parseInt(String(senderId), 10);
+    const existingSid = conv.cooldownSenderId != null ? parseInt(String(conv.cooldownSenderId), 10) : null;
+    if (conv.cooldownUntil && existingSid === sid) {
+        const existingEnd = new Date(conv.cooldownUntil).getTime();
+        if (existingEnd > now + 500) {
+            return;
+        }
+    }
+    const until = new Date(now + addMs);
     saveConversation(id, {
         ...conv,
         cooldownUntil:    until.toISOString(),
-        cooldownSenderId: parseInt(String(senderId), 10)
+        cooldownSenderId: sid
     });
 }
 

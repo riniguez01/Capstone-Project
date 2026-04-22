@@ -42,9 +42,9 @@ function ChatList({ matches, loading, onSelect }) {
                         <div className="chat-inbox-main">
                             <div className="chat-inbox-name">{match.name}</div>
                             <div className="chat-inbox-preview">
-                                {match.last_message ||
-                                    [match.location, match.age].filter(Boolean).join(" · ") ||
-                                    "Say hello 👋"}
+                                {match.last_message && String(match.last_message).trim()
+                                    ? match.last_message
+                                    : `You matched with ${match.name} — say hello!`}
                             </div>
                         </div>
                         <div className="chat-inbox-meta">

@@ -87,6 +87,48 @@ describe("filterMatches", () => {
         assert.equal(out.length, 0);
     });
 
+    test("partner gender preference stored as Open to all (gender_type_id 6) matches same candidates as explicit multi-id list", () => {
+        const man = {
+            user_id: 10,
+            trust_score: 80,
+            account_status: "active",
+            gender_identity: 2,
+            date_of_birth: "1999-01-01",
+            preferences: { preferred_genders: [3] },
+        };
+        const woman = {
+            user_id: 11,
+            trust_score: 80,
+            account_status: "active",
+            gender_identity: 3,
+            date_of_birth: "1999-01-01",
+            preferences: { preferred_genders: [2] },
+        };
+        const baseViewer = {
+            user_id: 1,
+            gender_identity: 3,
+            dating_goals: 3,
+            dating_goals_name: "Long-term",
+            children: 1,
+            children_name: "Want kids",
+            latitude: 41.87,
+            longitude: -87.62,
+        };
+        const viewerOpenToAll = {
+            ...baseViewer,
+            preferences: basePrefs({ preferred_genders: [6] }),
+        };
+        const viewerExplicit = {
+            ...baseViewer,
+            preferences: basePrefs({ preferred_genders: [2, 3] }),
+        };
+        const outOpen = filterMatches(viewerOpenToAll, [man, woman]);
+        const outExplicit = filterMatches(viewerExplicit, [man, woman]);
+        assert.equal(outOpen.length, 1);
+        assert.equal(outExplicit.length, 1);
+        assert.equal(outOpen[0].user_id, outExplicit[0].user_id);
+    });
+
     test("partner religion open (label) matches any candidate religion", () => {
         const user = {
             user_id: 1,
@@ -124,7 +166,43 @@ describe("filterMatches", () => {
         assert.equal(out.length, 1);
     });
 
-    test("filters by partner family-oriented when preference is Yes or No (not open)", () => {
+    test("Open to all identity: mutual uses partner-pref overlap with seek, or explicit OTA id", () => {
+        const openToAllViewer = {
+            user_id: 1,
+            gender_identity: 99,
+            gender_name: "Open to all",
+            dating_goals: 3,
+            dating_goals_name: "Long-term",
+            children: 1,
+            children_name: "Want kids",
+            latitude: 41.87,
+            longitude: -87.62,
+            preferences: basePrefs({ preferred_genders: [2, 3] }),
+        };
+        const womanSeeksOpenToAll = {
+            user_id: 2,
+            trust_score: 80,
+            account_status: "active",
+            gender_identity: 3,
+            date_of_birth: "1999-01-01",
+            preferences: { preferred_genders: [99] },
+        };
+        const womanSeeksManOnly = {
+            ...womanSeeksOpenToAll,
+            user_id: 3,
+            preferences: { preferred_genders: [2] },
+        };
+        const womanSeeksOnlyNb = {
+            ...womanSeeksOpenToAll,
+            user_id: 4,
+            preferences: { preferred_genders: [4] },
+        };
+        assert.equal(filterMatches(openToAllViewer, [womanSeeksOpenToAll]).length, 1);
+        assert.equal(filterMatches(openToAllViewer, [womanSeeksManOnly]).length, 1);
+        assert.equal(filterMatches(openToAllViewer, [womanSeeksOnlyNb]).length, 0);
+    });
+
+    test("partner family-oriented is not a hard deck filter (mutual gender + trust still apply)", () => {
         const user = {
             user_id: 1,
             gender_identity: 2,
@@ -161,8 +239,7 @@ describe("filterMatches", () => {
         };
         const familyNo = { ...wantsFamilyYes, user_id: 11, family_oriented: 2 };
         const out = filterMatches(user, [familyNo, wantsFamilyYes]);
-        assert.equal(out.length, 1);
-        assert.equal(out[0].user_id, 10);
+        assert.equal(out.length, 2);
     });
 });
 
@@ -242,5 +319,32 @@ describe("scoreMatch", () => {
         const r = scoreMatch(a, b);
         assert.ok(r.totalScore >= 0 && r.totalScore <= 100);
         assert.ok(r.breakdown.interests >= 0 && r.breakdown.interests <= 100);
+    });
+
+    test("breakdown includes human-readable reasons for identical profiles", () => {
+        const a = {
+            music: 1,
+            travel: 2,
+            pet_interest: 1,
+            reader: 2,
+            gamer: 3,
+            activity_level: 3,
+            drinking_id: 3,
+            smoking_id: 2,
+            diet_id: 1,
+            coffee_id: 1,
+            personality_type: 3,
+            religion_id: 6,
+            family_oriented: 1,
+            political: 3,
+            dating_goals: 3,
+            children: 1,
+            education_career_id: 4,
+        };
+        const b = { ...a };
+        const r = scoreMatch(a, b);
+        assert.ok(Array.isArray(r.breakdown.reasons));
+        assert.ok(r.breakdown.reasons.includes("Shared faith"));
+        assert.ok(r.breakdown.reasons.includes("Same dating goals"));
     });
 });

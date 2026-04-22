@@ -33,6 +33,27 @@ async function saveAndPersist(matchId, conv) {
     await persistConversation(matchId);
 }
 
+function hasActiveCooldown(conv) {
+    return !!(conv?.cooldownUntil && new Date() < new Date(conv.cooldownUntil));
+}
+
+function isPeerCooldownActive(conv, senderId) {
+    if (!hasActiveCooldown(conv)) return false;
+    return parseInt(String(conv.cooldownSenderId), 10) !== parseInt(String(senderId), 10);
+}
+
+function cooldownWaitText(cooldownUntil) {
+    const remainingMs = cooldownUntil
+        ? Math.max(0, new Date(cooldownUntil) - new Date())
+        : 0;
+    const totalSeconds = Math.floor(remainingMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return totalSeconds > 60
+        ? `Please wait ${minutes} minutes and ${seconds} seconds before sending another message.`
+        : `Please wait ${seconds} seconds before sending another message.`;
+}
+
 /** When a cooldown has ended, clear escalation counters so the pipeline can recover (spec §6). */
 async function expireCooldownIfNeeded(matchId) {
     const conv = getConversation(matchId);
@@ -45,7 +66,8 @@ async function expireCooldownIfNeeded(matchId) {
         resistanceCount:     0,
         repeatRequestCount:  0,
         resistanceWindow:    [],
-        unansweredCount:     0
+        unansweredCount:     0,
+        boundarySetByUserId: null
     });
 }
 
@@ -61,29 +83,27 @@ function getEscalationLevel(conv) {
 }
 
 // ─── State transition validator ────────────────────────────────────────────
-// Checks whether moving from current state to required state is valid.
-// Spec §5 transition rules.
-function canTransitionTo(requiredState, conv) {
-    if (requiredState <= conv.state) return true; // already at or past required state
+function canTransitionTo(requiredState, conv, senderId) {
+    if (requiredState <= conv.state) return true;
 
-    // Only adjacent transitions are valid — no skipping states
     if (requiredState > conv.state + 1) return false;
 
-    // Entry conditions per target state
+    const projectedInitiators = new Set(conv.initiators);
+    if (senderId != null && !Number.isNaN(parseInt(String(senderId), 10))) {
+        projectedInitiators.add(parseInt(String(senderId), 10));
+    }
+
     if (requiredState === STATE.FLIRTING) {
-        // S0 → S1: both users must have initiated at least once
-        return conv.initiators.size >= 2 &&
+        return projectedInitiators.size >= 2 &&
             conv.resistanceWindow.filter(Boolean).length === 0;
     }
 
     if (requiredState === STATE.PERSONAL) {
-        // S1 → S2: at least 3 alternating exchanges, no unresolved resistance
         return conv.alternatingCount >= 3 &&
             conv.resistanceWindow.filter(Boolean).length === 0;
     }
 
     if (requiredState === STATE.INTIMATE) {
-        // S2 → S3: sustained engagement (spec) — not only score; blocks early “I love you” after quick S2
         return conv.consentScore >= 0.6 &&
             conv.resistanceWindow.filter(Boolean).length === 0 &&
             conv.resistanceCount === 0 &&
@@ -158,7 +178,8 @@ async function evaluateMessage(matchId, senderId, recipientId, content) {
             reason:          'Invalid message context.',
             category:        'invalid',
             escalation:      'normal',
-            cooldownApplied: false
+            cooldownApplied: false,
+            cooldownUntil:   null
         };
     }
 
@@ -168,12 +189,14 @@ async function evaluateMessage(matchId, senderId, recipientId, content) {
 
     // ── Step 1: Cooldown check ─────────────────────────────────────────────
     if (isOnCooldown(matchId, senderId)) {
+        conv = getConversation(matchId);
         return {
             decision:       'block',
-            reason:         'You are currently in a cooldown period. Please wait before sending another message.',
+            reason:         `You are in a cooldown period. ${cooldownWaitText(conv.cooldownUntil)}`,
             category:       'cooldown',
             escalation:     'restrict',
-            cooldownApplied: false
+            cooldownApplied: false,
+            cooldownUntil:  conv.cooldownUntil || null
         };
     }
 
@@ -182,23 +205,28 @@ async function evaluateMessage(matchId, senderId, recipientId, content) {
     const requiredState           = requiredStateForCategory(category);
 
     // ── Step 3: Compute escalation BEFORE updating counters ───────────────
-    const escalation = getEscalationLevel(conv);
+    const peerCooldownActive = isPeerCooldownActive(conv, senderId);
+    const escalation = peerCooldownActive ? 'normal' : getEscalationLevel(conv);
 
     // ── Step 4: Hard blocks — severe inappropriate or pressuring / threatening language
     if (riskLevel === 2) {
         // Apply cooldown — temporary sending restriction after a serious policy violation
         applyCooldown(matchId, senderId, 2);
         conv = getConversation(matchId);
-        _updateCounters(conv, senderId, recipientId, category, false, content);
+        const cooldownReason = cooldownWaitText(conv.cooldownUntil);
+        _updateCounters(conv, senderId, recipientId, category, false, content, {
+            suppressEscalationTracking: peerCooldownActive
+        });
         await saveAndPersist(matchId, conv);
         return {
             decision:       'block',
             reason:         category === 'explicit'
-                ? 'This type of message is not allowed on Aura.'
-                : 'Messages that pressure or threaten someone are not allowed. Your message was not sent.',
+                ? `This type of message is not allowed on Aura. ${cooldownReason}`
+                : `Messages that pressure or threaten someone are not allowed. Your message was not sent. ${cooldownReason}`,
             category,
             escalation,
-            cooldownApplied: true
+            cooldownApplied: true,
+            cooldownUntil:  conv.cooldownUntil || null
         };
     }
 
@@ -206,14 +234,18 @@ async function evaluateMessage(matchId, senderId, recipientId, content) {
     if (escalation === 'restrict' && !_victimBenignFollowUp(conv, senderId, category, riskLevel)) {
         applyCooldown(matchId, senderId, 2);
         conv = getConversation(matchId);
-        _updateCounters(conv, senderId, recipientId, category, false, content);
+        const cooldownReason = cooldownWaitText(conv.cooldownUntil);
+        _updateCounters(conv, senderId, recipientId, category, false, content, {
+            suppressEscalationTracking: peerCooldownActive
+        });
         await saveAndPersist(matchId, conv);
         return {
             decision:       'block',
-            reason:         'A boundary has been indicated in this conversation. Your message was not sent.',
+            reason:         `A boundary has been indicated in this conversation. Your message was not sent. ${cooldownReason}`,
             category,
             escalation,
-            cooldownApplied: true
+            cooldownApplied: true,
+            cooldownUntil:  conv.cooldownUntil || null
         };
     }
 
@@ -221,7 +253,14 @@ async function evaluateMessage(matchId, senderId, recipientId, content) {
     // Project natural S1→S2 advance using this message’s alternation (counters update later).
     const willAlternate = conv.lastSenderId !== null && conv.lastSenderId !== senderId;
     const projectedAlternating = willAlternate ? conv.alternatingCount + 1 : conv.alternatingCount;
+    const projectedInitiators = new Set(conv.initiators);
+    projectedInitiators.add(senderId);
     let effectiveState = conv.state;
+    if (effectiveState === STATE.INTRODUCTORY &&
+        projectedInitiators.size >= 2 &&
+        conv.resistanceWindow.filter(Boolean).length === 0) {
+        effectiveState = STATE.FLIRTING;
+    }
     if (effectiveState === STATE.FLIRTING &&
         projectedAlternating >= 3 &&
         conv.resistanceWindow.filter(Boolean).length === 0) {
@@ -230,16 +269,19 @@ async function evaluateMessage(matchId, senderId, recipientId, content) {
     const convForTransition = effectiveState === conv.state ? conv : { ...conv, state: effectiveState };
 
     if (requiredState > convForTransition.state) {
-        if (!canTransitionTo(requiredState, convForTransition)) {
+        if (!canTransitionTo(requiredState, convForTransition, senderId)) {
             // Invalid transition — block
-            _updateCounters(conv, senderId, recipientId, category, false, content);
+            _updateCounters(conv, senderId, recipientId, category, false, content, {
+                suppressEscalationTracking: peerCooldownActive
+            });
             await saveAndPersist(matchId, conv);
             return {
                 decision:       'block',
                 reason:         _transitionBlockReason(convForTransition.state, requiredState),
                 category,
                 escalation,
-                cooldownApplied: false
+                cooldownApplied: false,
+                cooldownUntil:  null
             };
         }
         // Valid transition — advance state to target (may skip natural S1→S2 if message is intimate)
@@ -248,33 +290,40 @@ async function evaluateMessage(matchId, senderId, recipientId, content) {
 
     // ── Step 6: Warning escalation — prompt but allow ─────────────────────
     if (escalation === 'warning' || riskLevel === 1) {
-        _updateCounters(conv, senderId, recipientId, category, true, content);
+        _updateCounters(conv, senderId, recipientId, category, true, content, {
+            suppressEscalationTracking: peerCooldownActive
+        });
         await saveAndPersist(matchId, conv);
         return {
             decision:       'prompt',
             reason:         'Just a reminder to make sure the other person is comfortable.',
             category,
             escalation,
-            cooldownApplied: false
+            cooldownApplied: false,
+            cooldownUntil:  null
         };
     }
 
     // ── Step 7: All good — deliver ─────────────────────────────────────────
-    _updateCounters(conv, senderId, recipientId, category, true, content);
+    _updateCounters(conv, senderId, recipientId, category, true, content, {
+        suppressEscalationTracking: peerCooldownActive
+    });
     await saveAndPersist(matchId, conv);
     return {
         decision:       'deliver',
         reason:         null,
         category,
         escalation,
-        cooldownApplied: false
+        cooldownApplied: false,
+        cooldownUntil:  null
     };
 }
 
 // ─── Internal counter update helper ───────────────────────────────────────
 // Updates all behavioral counters and consent score.
 // Called AFTER the decision is already made (doesn't affect current decision).
-function _updateCounters(conv, senderId, recipientId, category, willDeliver, content) {
+function _updateCounters(conv, senderId, recipientId, category, willDeliver, content, options = {}) {
+    const suppressEscalationTracking = options.suppressEscalationTracking === true;
     const nowMs = Date.now();
     const isAlternating = conv.lastSenderId !== null && conv.lastSenderId !== senderId;
     const peerLastAt = conv.lastMessageAtByUser[String(recipientId)];
@@ -287,27 +336,33 @@ function _updateCounters(conv, senderId, recipientId, category, willDeliver, con
     conv.totalMessages++;
 
     // Unanswered count — resets when the other person replies
-    if (conv.lastSenderId === senderId) {
-        conv.unansweredCount++;
-    } else {
-        conv.unansweredCount = 0;
-        if (isAlternating) conv.alternatingCount++;
+    if (!suppressEscalationTracking) {
+        if (conv.lastSenderId === senderId) {
+            conv.unansweredCount++;
+        } else {
+            conv.unansweredCount = 0;
+            if (isAlternating) conv.alternatingCount++;
+        }
     }
 
     // Repeat request / question count (spec §6) — pressure lines or piled-on asks without a reply
-    const piledOn = conv.lastSenderId !== null && conv.lastSenderId === senderId;
-    if (category === 'pressure') {
-        conv.repeatRequestCount++;
-    } else if (piledOn && looksLikeRequestOrQuestion(content)) {
-        conv.repeatRequestCount++;
+    if (!suppressEscalationTracking) {
+        const piledOn = conv.lastSenderId !== null && conv.lastSenderId === senderId;
+        if (category === 'pressure') {
+            conv.repeatRequestCount++;
+        } else if (piledOn && looksLikeRequestOrQuestion(content)) {
+            conv.repeatRequestCount++;
+        }
     }
 
     // Resistance — any message that signals refusal or discomfort (spec §6).
-    const refusalSignal = category === 'refusal';
-    conv.resistanceWindow = [...conv.resistanceWindow.slice(-4), refusalSignal];
-    if (refusalSignal) {
-        conv.resistanceCount++;
-        conv.boundarySetByUserId = senderId;
+    if (!suppressEscalationTracking) {
+        const refusalSignal = category === 'refusal';
+        conv.resistanceWindow = [...conv.resistanceWindow.slice(-4), refusalSignal];
+        if (refusalSignal) {
+            conv.resistanceCount++;
+            conv.boundarySetByUserId = senderId;
+        }
     }
 
     conv.lastMessageAtByUser[String(senderId)] = nowMs;
@@ -356,4 +411,12 @@ function _transitionBlockReason(currentState, requiredState) {
     return 'This message isn\'t appropriate at this stage of the conversation.';
 }
 
-module.exports = { evaluateMessage };
+module.exports = {
+    evaluateMessage,
+    feature3Test: {
+        getEscalationLevel,
+        canTransitionTo,
+        updateConsentScore,
+        expireCooldownIfNeeded,
+    },
+};
