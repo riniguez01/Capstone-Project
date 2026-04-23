@@ -2,9 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "../context/UserContext";
 import { API_BASE_URL } from "../config/api";
-
-/** Read when viewed; pending `date_request` and `post_date_survey` stay unread until action. */
-const READ_ON_VIEW_TYPES = ["date_accepted", "date_declined", "trust_feedback"];
+const READ_ON_VIEW_TYPES = ["date_accepted", "date_declined", "trust_feedback", "match_created", "new_message"];
 
 function parseNotifPayload(n) {
     const raw = n.payload;
@@ -54,9 +52,7 @@ function Navbar() {
                 },
                 body: JSON.stringify({ types: READ_ON_VIEW_TYPES }),
             });
-        } catch {
-            /* ignore */
-        }
+        } catch {}
     }, [userId, token]);
 
     const bellRef = useRef(null);
@@ -148,6 +144,24 @@ function Navbar() {
                 showAppealButton: true,
             };
         }
+        if (n.type === "match_created") {
+            return {
+                icon:        "💘",
+                title:       `${p.matcher_name || "Someone"} matched with you!`,
+                body:        "You both liked each other. Start chatting now.",
+                showActions: false,
+                showChatButton: true,
+            };
+        }
+        if (n.type === "new_message") {
+            return {
+                icon: "💬",
+                title: `${p.sender_name || "Your match"} sent a message`,
+                body: p.preview || "Open chat to read the message.",
+                showActions: false,
+                matchId: p.match_id,
+            };
+        }
         return { icon: "🔔", title: n.type, body: "", showActions: false };
     };
 
@@ -176,8 +190,6 @@ function Navbar() {
                             <span className="notif-badge">{unread}</span>
                         )}
                     </div>
-                    <i className="bi bi-share"></i>
-                    <i className="bi bi-search"></i>
                 </div>
             </nav>
 
@@ -190,7 +202,7 @@ function Navbar() {
                     {notifications.map((n) => {
                         const f = formatNotif(n);
                         return (
-                            <div key={n.notification_id} className={`notif-item${n.is_read ? " notif-item--read" : ""}`}>
+                            <div key={n.notification_id} className="notif-item">
                                 <div className="notif-item__icon">{f.icon}</div>
                                 <div className="notif-item__body">
                                     <div className="notif-item__title">{f.title}</div>
@@ -243,6 +255,36 @@ function Navbar() {
                                             Submit trust appeal
                                         </button>
                                     )}
+                                    {n.type === "match_created" && f.showChatButton && (
+                                        <button
+                                            type="button"
+                                            className="btn btn-sm btn-danger mt-2"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                navigate("/chat");
+                                                setNotifOpen(false);
+                                            }}
+                                        >
+                                            Open messages
+                                        </button>
+                                    )}
+                                    {n.type === "new_message" && (
+                                        <button
+                                            type="button"
+                                            className="btn btn-sm btn-danger mt-2"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                navigate("/chat", {
+                                                    state: {
+                                                        openMatchId: parseInt(f.matchId, 10) || null,
+                                                    },
+                                                });
+                                                setNotifOpen(false);
+                                            }}
+                                        >
+                                            Open chat
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         );
@@ -255,7 +297,6 @@ function Navbar() {
                 <ul className="list-unstyled mt-4">
                     <li><a href="/profile">Profile</a></li>
                     <li><a href="/matching">Matching</a></li>
-                    <li><a href="/dates">Date Planner</a></li>
                     <li><a href="/chat">Messages</a></li>
                     <li><a href="/appeals">Trust appeal</a></li>
                     <li><a href="/">Logout</a></li>
