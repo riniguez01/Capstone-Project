@@ -126,41 +126,7 @@ function Profile() {
         const url = URL.createObjectURL(file);
         lastBlobUrlRef.current = url;
         updateProfile("profilePic", url);
-
-        if (!token) return;
-
-        try {
-            const dataUrl = await readFileAsDataUrl(file);
-            const photoRes = await fetch(`${API_BASE_URL}/profile/photo`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ photo_url: dataUrl }),
-            });
-            const photoData = await photoRes.json().catch(() => ({}));
-            if (!photoRes.ok) {
-                setSaveError(photoData.error || "Failed to save photo.");
-                return;
-            }
-            const savedUrl = photoData.photo_url;
-            if (lastBlobUrlRef.current) {
-                URL.revokeObjectURL(lastBlobUrlRef.current);
-                lastBlobUrlRef.current = null;
-            }
-            pendingPhotoFileRef.current = null;
-            updateProfile("profilePic", savedUrl);
-            setSaveError(null);
-
-            const meRes = await fetch(`${API_BASE_URL}/auth/me`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            if (meRes.ok) {
-                const meData = await meRes.json();
-                if (meData?.user) syncSessionFromAuthUser(meData.user);
-            }
-            await refreshMatches();
-        } catch {
-            setSaveError("Could not save photo. Check your connection, then try again or click Save.");
-        }
+        setSaveError(null);
     };
 
     useEffect(() => () => {
@@ -220,39 +186,41 @@ function Profile() {
                 updateProfile("profilePic", savedUrl);
             }
 
-            const profileRes = await fetch(`${API_BASE_URL}/profile/save`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                body: JSON.stringify(buildProfileSaveRequestBody(profile)),
-            });
+            const [profileRes, prefRes] = await Promise.all([
+                fetch(`${API_BASE_URL}/profile/save`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                    body: JSON.stringify(buildProfileSaveRequestBody(profile)),
+                }),
+                fetch(`${API_BASE_URL}/profile/preferences`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({
+                        genderPref:     preferences.genderPref,
+                        genderPrefs:    preferences.genderPrefs ?? [],
+                        minAge:         preferences.minAge,
+                        maxAge:         preferences.maxAge,
+                        minHeight:      preferences.minHeight,
+                        maxHeight:      preferences.maxHeight,
+                        religionPref:   preferences.religionPref,
+                        ethnicityPref:  preferences.ethnicityPref,
+                        politicalPref:  preferences.politicalPref,
+                        childrenPref:   preferences.childrenPref,
+                        datingGoalPref: preferences.datingGoalPref,
+                        activityPref:   preferences.activityPref,
+                        familyOrientedPref: preferences.familyOrientedPref,
+                    }),
+                }),
+            ]);
 
-            const profileData = await profileRes.json();
+            const [profileData, prefData] = await Promise.all([
+                profileRes.json().catch(() => ({})),
+                prefRes.json().catch(() => ({})),
+            ]);
             if (!profileRes.ok) {
                 setSaveError(profileData.error || "Failed to save profile.");
                 return;
             }
-
-            const prefRes = await fetch(`${API_BASE_URL}/profile/preferences`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                body: JSON.stringify({
-                    genderPref:     preferences.genderPref,
-                    genderPrefs:    preferences.genderPrefs ?? [],
-                    minAge:         preferences.minAge,
-                    maxAge:         preferences.maxAge,
-                    minHeight:      preferences.minHeight,
-                    maxHeight:      preferences.maxHeight,
-                    religionPref:   preferences.religionPref,
-                    ethnicityPref:  preferences.ethnicityPref,
-                    politicalPref:  preferences.politicalPref,
-                    childrenPref:   preferences.childrenPref,
-                    datingGoalPref: preferences.datingGoalPref,
-                    activityPref:   preferences.activityPref,
-                    familyOrientedPref: preferences.familyOrientedPref,
-                }),
-            });
-
-            const prefData = await prefRes.json();
             if (!prefRes.ok) {
                 setSaveError(prefData.error || "Failed to save preferences.");
                 return;

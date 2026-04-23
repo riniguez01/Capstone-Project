@@ -15,6 +15,7 @@ const path = require("path");
 const { Client } = require("pg");
 const { clearFeatureCrossDiscoverySwipes } = require("./clearFeatureCrossDiscoverySwipes");
 const { ensureTestUserTrustDatesReviewed } = require("./ensureTestUserTrustDatesReviewed");
+const { main: assignTestUserProfilePhotos } = require("./assignTestUserProfilePhotos");
 
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 require("dotenv").config({ path: path.join(__dirname, "..", "backend", ".env") });
@@ -595,6 +596,19 @@ async function cmdSeed() {
         throw e;
     } finally {
         await client.end();
+    }
+
+    try {
+        await assignTestUserProfilePhotos();
+        console.log("Assigned deterministic Pexels profile photos for seeded test users.");
+    } catch (e) {
+        if (String(e.message || "").includes("Missing PEXELS_API_KEY")) {
+            console.warn(
+                "Skipped profile photo assignment: PEXELS_API_KEY is missing. Add it to .env and backend/.env, then run npm run db:photos:assign."
+            );
+        } else {
+            throw e;
+        }
     }
 }
 
