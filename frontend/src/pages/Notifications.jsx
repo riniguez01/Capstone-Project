@@ -4,7 +4,7 @@ import Navbar from "../components/Navbar";
 import { useUser } from "../context/UserContext";
 import { API_BASE_URL } from "../config/api";
 
-const READ_ON_VIEW_TYPES = ["date_accepted", "date_declined", "trust_feedback"];
+const READ_ON_VIEW_TYPES = ["date_accepted", "date_declined", "trust_feedback", "match_created", "new_message"];
 
 export default function Notifications() {
     const { currentUser, token, bumpNotificationEpoch } = useUser();
@@ -216,6 +216,52 @@ export default function Notifications() {
                         {scheduleId == null && (
                             <p className="text-danger small mb-0 mt-1">Missing schedule reference — refresh or contact support.</p>
                         )}
+                    </div>
+                    <div className="notification-time">{formatDate(n.created_at)}</div>
+                </div>
+            );
+        }
+
+        if (n.type === "match_created") {
+            return (
+                <div key={n.notification_id} className="notification-card">
+                    <div className="notification-icon">💘</div>
+                    <div className="notification-body">
+                        <div className="notification-title">It&apos;s a match!</div>
+                        <div className="notification-detail">
+                            {payload?.matcher_name || "Someone"} liked you back. You can chat now.
+                        </div>
+                        <button
+                            className="btn btn-sm btn-danger mt-2"
+                            onClick={() =>
+                                navigate("/chat", {
+                                    state: { openMatchId: parseInt(payload?.match_id, 10) || null },
+                                })
+                            }
+                        >
+                            Open chat
+                        </button>
+                    </div>
+                    <div className="notification-time">{formatDate(n.created_at)}</div>
+                </div>
+            );
+        }
+
+        if (n.type === "new_message") {
+            return (
+                <div key={n.notification_id} className="notification-card">
+                    <div className="notification-icon">💬</div>
+                    <div className="notification-body">
+                        <div className="notification-title">New message</div>
+                        <div className="notification-detail">
+                            {payload?.sender_name || "Your match"}: {payload?.preview || "Open chat to read the latest message."}
+                        </div>
+                        <button
+                            className="btn btn-sm btn-danger mt-2"
+                            onClick={() => navigate("/chat")}
+                        >
+                            Open messages
+                        </button>
                     </div>
                     <div className="notification-time">{formatDate(n.created_at)}</div>
                 </div>

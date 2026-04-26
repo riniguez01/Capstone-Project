@@ -345,7 +345,8 @@ exports.markNotificationsRead = async (req, res) => {
         return res.status(403).json({ error: "Forbidden." });
     }
 
-    const { types, notification_ids: notificationIds } = req.body || {};
+    const { types, notification_ids: notificationIds, match_id: matchIdRaw } = req.body || {};
+    const matchId = parseInt(matchIdRaw, 10);
 
     try {
         if (Array.isArray(notificationIds) && notificationIds.length > 0) {
@@ -359,11 +360,22 @@ exports.markNotificationsRead = async (req, res) => {
                 [uid, ids]
             );
         } else if (Array.isArray(types) && types.length > 0) {
-            await pool.query(
-                `UPDATE notifications SET is_read = true
-                 WHERE user_id = $1 AND type = ANY($2::text[]) AND is_read = false`,
-                [uid, types]
-            );
+            if (types.length === 1 && types[0] === "new_message" && !Number.isNaN(matchId)) {
+                await pool.query(
+                    `UPDATE notifications SET is_read = true
+                     WHERE user_id = $1
+                       AND type = 'new_message'
+                       AND is_read = false
+                       AND (payload->>'match_id')::int = $2`,
+                    [uid, matchId]
+                );
+            } else {
+                await pool.query(
+                    `UPDATE notifications SET is_read = true
+                     WHERE user_id = $1 AND type = ANY($2::text[]) AND is_read = false`,
+                    [uid, types]
+                );
+            }
         } else {
             return res.status(400).json({ error: "Provide types or notification_ids." });
         }

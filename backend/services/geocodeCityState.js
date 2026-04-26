@@ -13,7 +13,8 @@ async function geocodeCityState(city, state) {
     const url = nominatimUrl(c, s);
     const ua = (process.env.GEOCODING_USER_AGENT || DEFAULT_UA).trim() || DEFAULT_UA;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
+    const timeoutMs = Number.parseInt(process.env.GEOCODING_TIMEOUT_MS || "2500", 10);
+    const timer = setTimeout(() => controller.abort(), Number.isFinite(timeoutMs) ? timeoutMs : 2500);
     try {
         const res = await fetch(url, {
             method: "GET",

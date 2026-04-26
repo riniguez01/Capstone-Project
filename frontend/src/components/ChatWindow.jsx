@@ -38,7 +38,6 @@ function ChatWindow({ match, onBack }) {
     const socketRef = useRef(null);
     const bottomRef = useRef(null);
     const typingTimer = useRef(null);
-    const bannerTimerRef = useRef(null);
     const borderTimerRef = useRef(null);
     const shakeTimerRef = useRef(null);
     const lastAttemptedTextRef = useRef("");
@@ -57,10 +56,6 @@ function ChatWindow({ match, onBack }) {
         eventSenderId == null || Number(eventSenderId) === Number(myUserIdRef.current);
 
     const clearBanner = () => {
-        if (bannerTimerRef.current) {
-            clearTimeout(bannerTimerRef.current);
-            bannerTimerRef.current = null;
-        }
         setBanner(null);
     };
 
@@ -92,10 +87,6 @@ function ChatWindow({ match, onBack }) {
         requestAnimationFrame(() => {
             setBanner((prev) => (prev ? { ...prev, visible: true } : null));
         });
-        bannerTimerRef.current = setTimeout(() => {
-            setBanner(null);
-            bannerTimerRef.current = null;
-        }, type === "block" ? 6000 : 5000);
     };
 
     const triggerBlockInputFeedback = () => {
@@ -141,6 +132,7 @@ function ChatWindow({ match, onBack }) {
         socket.emit("join_match", { match_id: matchIdNum });
 
         socket.on("new_message", (msg) => {
+            setIsTyping(false);
             const myId = Number(myUserIdRef.current);
             if (
                 Number(msg.sender_id) === myId &&
@@ -181,7 +173,6 @@ function ChatWindow({ match, onBack }) {
         });
 
         return () => {
-            if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
             if (borderTimerRef.current) clearTimeout(borderTimerRef.current);
             if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
             socket.emit("leave_match", { match_id: matchIdNum });
@@ -219,7 +210,6 @@ function ChatWindow({ match, onBack }) {
     };
 
     const handleKeyDown = (e) => {
-        if (banner) clearBanner();
         if (e.key === "Enter") {
             handleSend();
             return;
@@ -308,6 +298,14 @@ function ChatWindow({ match, onBack }) {
                             {banner.type === "block" ? "✕" : "⚠"}
                         </span>
                         <span className="chat-app-banner-text">{banner.reason}</span>
+                        <button
+                            type="button"
+                            className="chat-app-banner-close"
+                            onClick={clearBanner}
+                            aria-label="Dismiss warning"
+                        >
+                            ×
+                        </button>
                     </div>
                     {banner.type === "block" && (banner.cooldownEndsAt != null || banner.cooldown) && (
                         <div className="chat-app-banner-cooldown" data-cooldown-tick={cooldownTick}>
@@ -330,7 +328,6 @@ function ChatWindow({ match, onBack }) {
                         placeholder="Message…"
                         value={input}
                         onChange={(e) => {
-                            if (banner) clearBanner();
                             setInput(e.target.value);
                         }}
                         onKeyDown={handleKeyDown}

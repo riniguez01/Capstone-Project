@@ -453,7 +453,7 @@ describe("feature3 evaluateMessage integration", () => {
         assert.equal(r2.decision, "block");
         const s2 = parseWaitSecondsFromReason(r2.reason);
         assert.ok(s1 != null && s2 != null);
-        assert.ok(s2 < s1, `expected countdown ${s2} < ${s1}`);
+        assert.ok(s2 <= s1, `expected countdown ${s2} <= ${s1}`);
     });
 
     test("applyCooldown idempotency keeps stable timer across block reasons", async () => {

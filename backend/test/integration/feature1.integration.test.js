@@ -59,6 +59,7 @@ describeIntDb("feature1 integration API", () => {
     async function cleanupUserIds(ids) {
         if (!ids.length) return;
         const a = ids;
+        await pool.query(`DELETE FROM notifications WHERE user_id = ANY($1::int[])`, [a]);
         await pool.query(
             `DELETE FROM message WHERE match_id IN (
                 SELECT match_id FROM matches WHERE user1_id = ANY($1::int[]) OR user2_id = ANY($1::int[])
@@ -122,6 +123,7 @@ describeIntDb("feature1 integration API", () => {
                 `DELETE FROM blocks WHERE blocker_user_id IN (SELECT user_id FROM users WHERE email LIKE 'f1int_%')
                    OR blocked_user_id IN (SELECT user_id FROM users WHERE email LIKE 'f1int_%')`
             );
+            await pool.query(`DELETE FROM notifications WHERE user_id IN (SELECT user_id FROM users WHERE email LIKE 'f1int_%')`);
             await pool.query(`DELETE FROM photo WHERE user_id IN (SELECT user_id FROM users WHERE email LIKE 'f1int_%')`);
             await pool.query(`DELETE FROM trust_score WHERE user_id IN (SELECT user_id FROM users WHERE email LIKE 'f1int_%')`);
             await pool.query(
@@ -270,6 +272,44 @@ describeIntDb("feature1 integration API", () => {
                 [a, b]
             );
             assert.ok(mc.rows[0].c >= 1);
+        } finally {
+            await cleanupUserIds([a, b]);
+        }
+    });
+
+    dbTest("POST mutual like notifies user who liked first", async () => {
+        const ts = Date.now();
+        const a = await insertUser(`f1int_na_${ts}@test.com`, 1);
+        const b = await insertUser(`f1int_nb_${ts}@test.com`, 2);
+        try {
+            await pool.query(
+                `INSERT INTO swipes (swipe_user_id, swiped_user_id, swipe_type, created_at)
+                 VALUES ($1, $2, 'like', NOW())`,
+                [b, a]
+            );
+            const tokenA = generateToken(a);
+            const app = makeFeature1App();
+            await withFeature1Server(app, async (baseUrl) => {
+                const like = await feature1Fetch(baseUrl, `/matches/${a}/like`, {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${tokenA}` },
+                    body: { liked_user_id: b },
+                });
+                assert.equal(like.status, 201);
+                assert.equal(like.json.match_created, true);
+
+                const notif = await pool.query(
+                    `SELECT type, payload
+                     FROM notifications
+                     WHERE user_id = $1
+                     ORDER BY created_at DESC
+                     LIMIT 1`,
+                    [b]
+                );
+                assert.equal(notif.rows.length, 1);
+                assert.equal(notif.rows[0].type, "match_created");
+                assert.equal(Number(notif.rows[0].payload.matcher_user_id), a);
+            });
         } finally {
             await cleanupUserIds([a, b]);
         }
@@ -436,6 +476,32 @@ describeIntDb("feature1 integration API", () => {
             });
         } finally {
             await cleanupUserIds([a, b, c]);
+        }
+    });
+
+    dbTest("GET mutual requires reciprocal likes even if match row exists", async () => {
+        const ts = Date.now();
+        const a = await insertUser(`f1int_rl_${ts}@test.com`, 1);
+        const b = await insertUser(`f1int_rm_${ts}@test.com`, 2);
+        try {
+            await pool.query(
+                `INSERT INTO matches (user1_id, user2_id, match_status, matched_at)
+                 VALUES (LEAST($1,$2), GREATEST($1,$2), 'active', NOW())`,
+                [a, b]
+            );
+            const tokenA = generateToken(a);
+            const app = makeFeature1App();
+            await withFeature1Server(app, async (baseUrl) => {
+                const { status, json } = await feature1Fetch(baseUrl, `/matches/${a}/mutual`, {
+                    method: "GET",
+                    headers: { Authorization: `Bearer ${tokenA}` },
+                });
+                assert.equal(status, 200);
+                const ids = json.matches.map((m) => Number(m.user_id));
+                assert.ok(!ids.includes(b));
+            });
+        } finally {
+            await cleanupUserIds([a, b]);
         }
     });
 

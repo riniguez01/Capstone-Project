@@ -107,6 +107,39 @@ function initSocketServer(httpServer) {
                     [mid, uid, content.trim()]
                 );
 
+                const senderNameResult = await pool.query(
+                    `SELECT first_name, last_name FROM users WHERE user_id = $1 LIMIT 1`,
+                    [uid]
+                );
+                const senderName = senderNameResult.rows[0]
+                    ? `${senderNameResult.rows[0].first_name || ""} ${senderNameResult.rows[0].last_name || ""}`.trim()
+                    : "Your match";
+
+                await pool.query(
+                    `UPDATE notifications
+                     SET is_read = true
+                     WHERE user_id = $1
+                       AND type = 'new_message'
+                       AND is_read = false
+                       AND (payload->>'match_id')::int = $2`,
+                    [recipientId, mid]
+                );
+
+                await pool.query(
+                    `INSERT INTO notifications (user_id, type, payload, is_read, created_at)
+                     VALUES ($1, 'new_message', $2, false, NOW())`,
+                    [
+                        recipientId,
+                        JSON.stringify({
+                            match_id: mid,
+                            sender_id: uid,
+                            sender_name: senderName || "Your match",
+                            message_id: result.rows[0].message_id,
+                            preview: content.trim().slice(0, 140),
+                        }),
+                    ]
+                );
+
                 io.to(`match_${mid}`).emit("new_message", result.rows[0]);
 
             } catch (err) {

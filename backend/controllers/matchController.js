@@ -400,6 +400,27 @@ exports.likeUser = async (req, res) => {
                 [user1, user2]
             );
             matchId = mid.rows[0]?.match_id ?? null;
+
+            const actorResult = await pool.query(
+                `SELECT first_name, last_name FROM users WHERE user_id = $1`,
+                [userId]
+            );
+            const actorName = actorResult.rows.length > 0
+                ? `${actorResult.rows[0].first_name || ""} ${actorResult.rows[0].last_name || ""}`.trim()
+                : "Someone";
+
+            await pool.query(
+                `INSERT INTO notifications (user_id, type, payload, is_read, created_at)
+                 VALUES ($1, 'match_created', $2, false, NOW())`,
+                [
+                    likedUserId,
+                    JSON.stringify({
+                        match_id: matchId,
+                        matcher_user_id: userId,
+                        matcher_name: actorName,
+                    }),
+                ]
+            );
         }
 
         res.status(201).json({
@@ -435,6 +456,8 @@ exports.getMutualMatches = async (req, res) => {
             FROM matches m
             JOIN users u1 ON u1.user_id = m.user1_id
             JOIN users u2 ON u2.user_id = m.user2_id
+            JOIN swipes s1 ON s1.swipe_user_id = m.user1_id AND s1.swiped_user_id = m.user2_id AND s1.swipe_type = 'like'
+            JOIN swipes s2 ON s2.swipe_user_id = m.user2_id AND s2.swiped_user_id = m.user1_id AND s2.swipe_type = 'like'
             WHERE (m.user1_id = $1 OR m.user2_id = $1)
               AND m.match_status = 'active'
             ORDER BY last_message_at DESC NULLS LAST`,
